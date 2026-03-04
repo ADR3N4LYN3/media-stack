@@ -68,6 +68,15 @@ else
     ok "inotifywait disponible"
 fi
 
+# WireGuard (tunnel vers Freebox)
+if ! command -v wg &>/dev/null; then
+    warn "WireGuard non trouvé. Installation..."
+    apt-get update -qq && apt-get install -y -qq wireguard
+    ok "WireGuard installé"
+else
+    ok "WireGuard $(wg --version 2>/dev/null || echo 'disponible')"
+fi
+
 # ── 2. Création de la structure de répertoires ──
 
 info "Création des répertoires..."
@@ -76,7 +85,6 @@ mkdir -p /data/downloads/complete
 mkdir -p /data/downloads/incomplete
 mkdir -p /data/media/films
 mkdir -p /data/media/series
-mkdir -p /var/log/caddy
 mkdir -p "$PROJECT_DIR/config/homarr/configs"
 mkdir -p "$PROJECT_DIR/config/homarr/icons"
 mkdir -p "$PROJECT_DIR/config/homarr/data"
@@ -149,7 +157,49 @@ ok "Toutes les variables sont configurées"
 # Charger les variables
 source "$PROJECT_DIR/.env"
 
-# ── 6. Génération rclone.conf depuis le template ──
+# ── 6. Configuration du tunnel WireGuard vers la Freebox ──
+
+WG_CONF="/etc/wireguard/wg-freebox.conf"
+
+if [ ! -f "$WG_CONF" ]; then
+    info "Génération de la config WireGuard (tunnel → Freebox)..."
+    cat > "$WG_CONF" <<EOF
+[Interface]
+PrivateKey = ${WG_FREEBOX_PRIVATE_KEY}
+Address = ${WG_FREEBOX_ADDRESS}
+MTU = 1360
+
+[Peer]
+PublicKey = ${WG_FREEBOX_PUBLIC_KEY}
+Endpoint = ${WG_FREEBOX_ENDPOINT}:${WG_FREEBOX_PORT}
+AllowedIPs = ${FREEBOX_WG_IP}/32
+PersistentKeepalive = 25
+EOF
+    chmod 600 "$WG_CONF"
+    ok "Config WireGuard générée dans $WG_CONF"
+else
+    ok "Config WireGuard déjà existante"
+fi
+
+# Activation du tunnel
+if ! wg show wg-freebox &>/dev/null; then
+    info "Activation du tunnel WireGuard..."
+    wg-quick up wg-freebox
+    systemctl enable wg-quick@wg-freebox
+    ok "Tunnel WireGuard actif et activé au démarrage"
+else
+    ok "Tunnel WireGuard déjà actif"
+fi
+
+# Test de connectivité
+info "Test de connectivité vers la Freebox via le tunnel..."
+if ping -c 1 -W 5 "${FREEBOX_WG_IP}" &>/dev/null; then
+    ok "Freebox accessible via le tunnel WireGuard (${FREEBOX_WG_IP})"
+else
+    warn "Freebox non joignable via ${FREEBOX_WG_IP} — vérifie que le serveur WireGuard est actif sur la Freebox"
+fi
+
+# ── 7. Génération rclone.conf depuis le template ──
 
 info "Génération de rclone.conf..."
 
@@ -158,30 +208,27 @@ RCLONE_TEMPLATE="$PROJECT_DIR/config/rclone/rclone.conf.template"
 
 if [ -f "$RCLONE_TEMPLATE" ]; then
     sed \
-        -e "s|FREEBOX_HOST_PLACEHOLDER|${FREEBOX_HOST}|g" \
-        -e "s|FREEBOX_USER_PLACEHOLDER|${FREEBOX_USER}|g" \
+        -e "s|FREEBOX_WG_IP_PLACEHOLDER|${FREEBOX_WG_IP}|g" \
+        -e "s|FREEBOX_SFTP_USER_PLACEHOLDER|${FREEBOX_SFTP_USER}|g" \
+        -e "s|FREEBOX_SFTP_PORT_PLACEHOLDER|${FREEBOX_SFTP_PORT}|g" \
         "$RCLONE_TEMPLATE" > "$RCLONE_CONF"
     ok "rclone.conf généré"
 else
     die "Template rclone.conf.template introuvable"
 fi
 
-# ── 7. Scan de la clé hôte Freebox ──
+# ── 8. Scan de la clé hôte SFTP Freebox (via tunnel) ──
 
 KNOWN_HOSTS="$PROJECT_DIR/config/rclone/known_hosts"
 
-if [ ! -f "$KNOWN_HOSTS" ] || ! grep -q "${FREEBOX_HOST}" "$KNOWN_HOSTS" 2>/dev/null; then
-    info "Scan de la clé hôte de la Freebox (${FREEBOX_HOST})..."
-    if ssh-keyscan -H "${FREEBOX_HOST}" >> "$KNOWN_HOSTS" 2>/dev/null; then
-        ok "Clé hôte Freebox ajoutée à known_hosts"
-    else
-        warn "Impossible de scanner ${FREEBOX_HOST} — vérifie que SSH est actif sur la Freebox"
-    fi
+info "Scan de la clé hôte SFTP Freebox (${FREEBOX_WG_IP}:${FREEBOX_SFTP_PORT})..."
+if ssh-keyscan -p "${FREEBOX_SFTP_PORT}" -H "${FREEBOX_WG_IP}" >> "$KNOWN_HOSTS" 2>/dev/null; then
+    ok "Clé hôte SFTP ajoutée à known_hosts"
 else
-    ok "Clé hôte Freebox déjà dans known_hosts"
+    warn "Impossible de scanner — le conteneur SFTP n'est peut-être pas encore lancé sur la Freebox"
 fi
 
-# ── 8. Affichage de la clé publique SSH ──
+# ── 9. Affichage de la clé publique SSH (pour le conteneur SFTP Freebox) ──
 
 echo ""
 echo "═══════════════════════════════════════════"
@@ -191,10 +238,63 @@ echo ""
 echo -e "${CYAN}"
 cat "${SSH_KEY}.pub"
 echo -e "${NC}"
-echo "→ Copie cette clé dans ~/.ssh/authorized_keys sur la Freebox"
+echo "→ Colle cette clé dans le setup-freebox.sh (ou dans freebox/config/sftp/ssh/authorized_key)"
 echo ""
 
-# ── 9. Durcissement système ──
+# ── 10. Configuration nginx reverse proxy ──
+
+info "Configuration nginx..."
+
+# Vérifier que nginx est installé
+if ! command -v nginx &>/dev/null; then
+    warn "nginx non trouvé. Installation..."
+    apt-get update -qq && apt-get install -y -qq nginx apache2-utils
+    ok "nginx installé"
+else
+    ok "nginx $(nginx -v 2>&1 | awk -F/ '{print $2}')"
+fi
+
+# Installer apache2-utils pour htpasswd si pas déjà présent
+if ! command -v htpasswd &>/dev/null; then
+    apt-get update -qq && apt-get install -y -qq apache2-utils
+fi
+
+# Vérifier les certificats Cloudflare
+if [ ! -f /etc/ssl/cloudflare/cert.pem ] || [ ! -f /etc/ssl/cloudflare/key.pem ]; then
+    warn "Certificats Cloudflare non trouvés dans /etc/ssl/cloudflare/"
+    echo "  Crée les certificats origin dans Cloudflare Dashboard → SSL/TLS → Origin Server"
+    echo "  Puis place-les dans /etc/ssl/cloudflare/cert.pem et key.pem"
+fi
+
+# Générer le htpasswd
+HTPASSWD_FILE="/etc/nginx/.htpasswd-media"
+info "Génération du fichier htpasswd..."
+htpasswd -bc "$HTPASSWD_FILE" "${NGINX_USER}" "${NGINX_PASSWORD}" 2>/dev/null
+chmod 640 "$HTPASSWD_FILE"
+chown root:www-data "$HTPASSWD_FILE"
+ok "Fichier htpasswd généré pour l'utilisateur ${NGINX_USER}"
+
+# Générer la config nginx depuis le template
+NGINX_TEMPLATE="$PROJECT_DIR/nginx/media-stack.conf.template"
+NGINX_CONF="/etc/nginx/sites-available/media-stack"
+
+if [ -f "$NGINX_TEMPLATE" ]; then
+    sed "s|DOMAIN_PLACEHOLDER|${DOMAIN}|g" "$NGINX_TEMPLATE" > "$NGINX_CONF"
+    ln -sf "$NGINX_CONF" /etc/nginx/sites-enabled/media-stack
+    ok "Config nginx générée pour *.${DOMAIN}"
+else
+    die "Template nginx introuvable : $NGINX_TEMPLATE"
+fi
+
+# Test et reload nginx
+if nginx -t 2>/dev/null; then
+    systemctl reload nginx
+    ok "nginx rechargé"
+else
+    warn "Erreur dans la config nginx — vérifie avec : nginx -t"
+fi
+
+# ── 11. Durcissement système ──
 
 if [ -f "$SCRIPT_DIR/harden.sh" ]; then
     read -rp "Lancer le durcissement système (harden.sh) ? [o/N] " harden_confirm
@@ -205,7 +305,7 @@ if [ -f "$SCRIPT_DIR/harden.sh" ]; then
     fi
 fi
 
-# ── 10. Confirmation avant lancement ──
+# ── 12. Confirmation avant lancement ──
 
 echo ""
 read -rp "Lancer docker compose up -d ? [o/N] " confirm
@@ -214,12 +314,12 @@ if [[ ! "$confirm" =~ ^[oOyY]$ ]]; then
     exit 0
 fi
 
-# ── 11. Lancement ──
+# ── 13. Lancement ──
 
 info "Démarrage des services..."
 docker compose up -d
 
-# ── 12. Attente healthchecks ──
+# ── 14. Attente healthchecks ──
 
 info "Attente des healthchecks (timeout 120s)..."
 
@@ -245,7 +345,7 @@ for svc in "${SERVICES_TO_CHECK[@]}"; do
     ELAPSED=0
 done
 
-# ── 13. Résumé ──
+# ── 15. Résumé ──
 
 DOMAIN="${DOMAIN:-localhost}"
 

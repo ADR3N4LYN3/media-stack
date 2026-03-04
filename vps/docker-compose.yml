@@ -73,6 +73,8 @@ services:
       - ./config/prowlarr:/config
     tmpfs:
       - /tmp
+    ports:
+      - "127.0.0.1:9696:9696"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9696/ping"]
       interval: 30s
@@ -102,6 +104,8 @@ services:
       - ${MEDIA_PATH}/series:/tv
     tmpfs:
       - /tmp
+    ports:
+      - "127.0.0.1:8989:8989"
     depends_on:
       prowlarr:
         condition: service_healthy
@@ -128,6 +132,8 @@ services:
       - ${MEDIA_PATH}/films:/movies
     tmpfs:
       - /tmp
+    ports:
+      - "127.0.0.1:7878:7878"
     depends_on:
       prowlarr:
         condition: service_healthy
@@ -152,6 +158,8 @@ services:
       - ./config/overseerr:/app/config
     tmpfs:
       - /tmp
+    ports:
+      - "127.0.0.1:5055:5055"
     security_opt:
       - "no-new-privileges:true"
     networks:
@@ -174,6 +182,8 @@ services:
       - ./config/homarr/data:/data
     tmpfs:
       - /tmp
+    ports:
+      - "127.0.0.1:7575:7575"
     security_opt:
       - "no-new-privileges:true"
     networks:
@@ -181,11 +191,12 @@ services:
     restart: unless-stopped
 
   # ──────────────────────────────────────────────
-  # Sync VPS → Freebox via SFTP (toutes les 5 min)
+  # Sync VPS → Freebox via SFTP sur tunnel WireGuard (toutes les 5 min)
   # ──────────────────────────────────────────────
   rclone:
     image: rclone/rclone:latest
     container_name: rclone
+    network_mode: host
     command: >
       sh -c "while true; do
         echo \"[$$(date '+%Y-%m-%d %H:%M:%S')] Sync vers Freebox...\";
@@ -212,37 +223,10 @@ services:
       - radarr
     security_opt:
       - "no-new-privileges:true"
-    networks:
-      - media_network
     restart: unless-stopped
 
   # ──────────────────────────────────────────────
-  # Reverse proxy HTTPS automatique
-  # ──────────────────────────────────────────────
-  caddy:
-    image: caddy:latest
-    container_name: caddy
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
-    environment:
-      - DOMAIN=${DOMAIN}
-      - CADDY_USER=${CADDY_USER}
-      - CADDY_PASSWORD_HASH=${CADDY_PASSWORD_HASH}
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-      - /var/log/caddy:/var/log/caddy
-    security_opt:
-      - "no-new-privileges:true"
-    networks:
-      - media_network
-    restart: unless-stopped
-
-  # ──────────────────────────────────────────────
-  # Protection brute-force SSH + BasicAuth
+  # Protection brute-force SSH + nginx auth
   # ──────────────────────────────────────────────
   fail2ban:
     image: crazymax/fail2ban:latest
@@ -283,8 +267,6 @@ services:
     restart: unless-stopped
 
 volumes:
-  caddy_data:
-  caddy_config:
   fail2ban_data:
 
 networks:

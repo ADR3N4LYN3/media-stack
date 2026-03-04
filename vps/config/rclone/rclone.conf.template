@@ -1,8 +1,8 @@
 [freebox]
 type = sftp
-host = FREEBOX_HOST_PLACEHOLDER
-user = FREEBOX_USER_PLACEHOLDER
-port = 22
+host = FREEBOX_WG_IP_PLACEHOLDER
+user = FREEBOX_SFTP_USER_PLACEHOLDER
+port = FREEBOX_SFTP_PORT_PLACEHOLDER
 key_file = /root/.ssh/id_rsa
 shell_type = unix
 md5sum_command = md5sum

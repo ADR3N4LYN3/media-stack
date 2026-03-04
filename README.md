@@ -1,50 +1,65 @@
 # Media Stack Self-Hosted
 
-Stack media automatisee, securisee et optimisee : telechargement sur VPS derriere VPN Mullvad, sync SFTP vers Freebox Ultra, lecture Plex 4K direct play.
+Stack media automatisee, securisee et optimisee : telechargement sur VPS derriere VPN Mullvad, sync via tunnel WireGuard vers Freebox Ultra, lecture Plex 4K direct play.
 
 ## Architecture
 
 ```
 VPS Hetzner AX22 (Helsinki)                 Freebox Ultra (domicile)
 ─────────────────────────────               ────────────────────────
-Caddy        ← reverse proxy HTTPS          Plex Media Server
+nginx        ← reverse proxy HTTPS          Plex Media Server
+               (Cloudflare SSL)             SFTP (conteneur Docker)
 Overseerr    ← demandes utilisateur              ↑
 Homarr       ← dashboard monitoring         NVMe interne
 Sonarr       ← gestion series               /mnt/NVMe/media/
 Radarr       ← gestion films                ├── films/
 Prowlarr     ← indexeurs torrent             └── series/
 qBittorrent  ← torrent (VPN Gluetun)
-rclone       ← sync SFTP ────────────────→
+rclone       ← sync SFTP ──── WireGuard tunnel ────→
 Fail2ban     ← protection brute-force
-Watchtower   ← MAJ auto images Docker
+Watchtower   ← MAJ auto images Docker       WireGuard Server (natif Freebox)
+WireGuard    ← tunnel vers Freebox (host)
 ```
 
 **Flux :**
 1. Demande via Overseerr → Sonarr/Radarr cherchent via Prowlarr
 2. qBittorrent telecharge (derriere VPN Mullvad via Gluetun)
-3. rclone sync automatique VPS → Freebox NVMe via SFTP
+3. rclone sync automatique VPS → Freebox NVMe via SFTP sur tunnel WireGuard
 4. Plex detecte et rend disponible → stream 4K direct play
 
 ## Prerequis
 
-- **VPS** : Hetzner AX22 (ou similaire) sous Ubuntu 22.04 LTS minimum
+- **VPS** : Hetzner AX22 (ou similaire) sous Ubuntu 22.04 LTS minimum, nginx installe
 - **Freebox Ultra** : Docker active dans Freebox OS, NVMe interne monte
-- **VPN** : Compte Mullvad avec cle WireGuard generee
-- **Domaine** : DNS A record pointant vers l'IP du VPS
+- **VPN Mullvad** : Compte avec cle WireGuard generee (pour les torrents)
+- **WireGuard Freebox** : Serveur VPN active dans Freebox OS → Parametres → Serveur VPN → WireGuard
+- **Domaine** : DNS via Cloudflare, A records pointant vers l'IP du VPS (proxy ON)
+- **Cloudflare SSL** : Certificats origin generes et places dans `/etc/ssl/cloudflare/`
 - **Plex** : Compte gratuit (Plex Pass optionnel pour transcodage materiel)
 
 ## Deploiement
 
-### Etape 1 — Freebox (en premier)
+### Etape 0 — Configurer WireGuard sur la Freebox
+
+1. Freebox OS → **Parametres** → **Mode avance** → **Connexion Internet** → **Serveur VPN**
+2. Cliquer sur **WireGuard** → **Activer** → **Appliquer**
+3. Aller dans **Utilisateurs** → **Ajouter** :
+   - Login : `mediastack` (ou autre)
+   - Type : WireGuard
+   - IP Fixe : laisser celle proposee
+   - Keepalive : 25
+4. **Telecharger le fichier .conf** → noter les valeurs pour le `.env` du VPS
+
+### Etape 1 — Freebox (Plex + SFTP)
 
 ```bash
 cd freebox/
 cp .env.example .env
-nano .env    # Remplir FREEBOX_IP + PLEX_CLAIM (https://plex.tv/claim, 4 min)
+nano .env    # Remplir FREEBOX_IP, PLEX_CLAIM, WG_FREEBOX_IP
 
 bash scripts/setup-freebox.sh
-# → Noter l'IP locale de la Freebox
-# → Configurer SSH et coller la cle publique du VPS
+# → Coller la cle publique SSH du VPS quand demande
+# → Lance Plex + conteneur SFTP
 ```
 
 ### Etape 2 — VPS
@@ -52,16 +67,28 @@ bash scripts/setup-freebox.sh
 ```bash
 cd vps/
 cp .env.example .env
-nano .env    # Remplir : WireGuard keys, Freebox SSH, domaine, Caddy auth
-
-# Generer le hash du mot de passe Caddy :
-docker run --rm caddy caddy hash-password
+nano .env    # Remplir : Mullvad WireGuard, tunnel Freebox, domaine, nginx auth
 
 bash scripts/setup.sh
+# → Installe WireGuard et monte le tunnel vers la Freebox
+# → Genere la cle SSH pour rclone
+# → Configure nginx reverse proxy avec basic auth
 # → Inclut automatiquement le durcissement systeme (harden.sh)
-# → Affiche la cle SSH publique a copier sur la Freebox
 # → Attend que les healthchecks soient OK
 ```
+
+### Etape 2b — DNS Cloudflare
+
+Creer les A records suivants (tous pointant vers l'IP du VPS, proxy ON) :
+
+| Sous-domaine | Service |
+|---|---|
+| `overseerr.DOMAIN` | Overseerr |
+| `sonarr.DOMAIN` | Sonarr |
+| `radarr.DOMAIN` | Radarr |
+| `prowlarr.DOMAIN` | Prowlarr |
+| `qbittorrent.DOMAIN` | qBittorrent |
+| `home.DOMAIN` | Homarr |
 
 ### Etape 3 — Configuration post-demarrage
 
@@ -122,24 +149,25 @@ media-stack/
 ├── README.md
 ├── .gitignore
 ├── vps/
-│   ├── docker-compose.yml       # 11 services
+│   ├── docker-compose.yml       # 10 services (sans nginx, sur le host)
 │   ├── .env.example             # Variables a personnaliser
-│   ├── Caddyfile                # Reverse proxy HTTPS + security headers
+│   ├── nginx/
+│   │   └── media-stack.conf.template  # Template reverse proxy
 │   ├── fail2ban/
-│   │   ├── jail.local           # Jails SSH + Caddy auth
+│   │   ├── jail.local           # Jails SSH + nginx auth
 │   │   └── filter.d/
-│   │       └── caddy-auth.conf  # Filtre BasicAuth echoue
+│   │       └── nginx-auth.conf  # Filtre BasicAuth echoue
 │   ├── config/
 │   │   ├── rclone/
 │   │   │   └── rclone.conf.template
 │   │   └── qbittorrent/
 │   │       └── qBittorrent.conf # Config optimisee
 │   └── scripts/
-│       ├── setup.sh             # Installation VPS
+│       ├── setup.sh             # Installation VPS + tunnel WireGuard + nginx
 │       ├── harden.sh            # Durcissement systeme
 │       └── sync-watch.sh        # Sync temps reel (inotify)
 └── freebox/
-    ├── docker-compose.yml       # Plex Media Server
+    ├── docker-compose.yml       # Plex + SFTP
     ├── .env.example
     └── scripts/
         └── setup-freebox.sh     # Installation Freebox
@@ -149,25 +177,31 @@ media-stack/
 
 | Variable | Fichier | Description |
 |---|---|---|
-| `WIREGUARD_PRIVATE_KEY` | `vps/.env` | Cle privee WireGuard Mullvad |
-| `WIREGUARD_ADDRESSES` | `vps/.env` | Adresse IP WireGuard |
-| `FREEBOX_HOST` | `vps/.env` | IP publique ou hostname de la Freebox |
-| `FREEBOX_USER` | `vps/.env` | Utilisateur SSH Freebox |
+| `WIREGUARD_PRIVATE_KEY` | `vps/.env` | Cle privee WireGuard Mullvad (pour torrents) |
+| `WIREGUARD_ADDRESSES` | `vps/.env` | Adresse IP WireGuard Mullvad |
+| `WG_FREEBOX_PRIVATE_KEY` | `vps/.env` | Cle privee du tunnel VPS→Freebox (fichier .conf telecharge) |
+| `WG_FREEBOX_ADDRESS` | `vps/.env` | Adresse IP du VPS dans le tunnel (ex: 192.168.27.65/32) |
+| `WG_FREEBOX_PUBLIC_KEY` | `vps/.env` | Cle publique de la Freebox (dans le fichier .conf, section [Peer]) |
+| `WG_FREEBOX_ENDPOINT` | `vps/.env` | IP publique de la Freebox (dans le fichier .conf, Endpoint sans le port) |
+| `FREEBOX_WG_IP` | `vps/.env` | IP WireGuard de la Freebox dans le tunnel (ex: 192.168.27.64) |
 | `DOMAIN` | `vps/.env` | Domaine pointant vers le VPS |
-| `CADDY_USER` | `vps/.env` | Utilisateur basic auth Caddy |
-| `CADDY_PASSWORD_HASH` | `vps/.env` | Hash genere via `docker run --rm caddy caddy hash-password` |
+| `NGINX_USER` | `vps/.env` | Utilisateur basic auth nginx |
+| `NGINX_PASSWORD` | `vps/.env` | Mot de passe basic auth nginx |
 | `SSH_PORT` | `vps/.env` | Port SSH custom (defaut: 2222) |
 | `PLEX_CLAIM` | `freebox/.env` | Token https://plex.tv/claim (expire en 4 min) |
 | `FREEBOX_IP` | `freebox/.env` | IP locale de la Freebox |
+| `WG_FREEBOX_IP` | `freebox/.env` | IP WireGuard de la Freebox (pour bind SFTP) |
 
 ## Securite
 
 - **VPN obligatoire** : qBittorrent ne demarre jamais sans VPN actif (healthcheck Gluetun)
-- **Aucun port interne expose** : seuls Caddy (80/443) et qBittorrent via Gluetun sont accessibles
+- **Tunnel WireGuard** : transferts VPS→Freebox chiffres, SFTP accessible uniquement via le tunnel
+- **Aucun port interne expose** : seuls nginx (80/443) sont accessibles depuis l'exterieur
+- **Cloudflare proxy** : IP reelle du VPS masquee, protection DDoS
 - **no-new-privileges** sur tous les conteneurs sauf Gluetun
 - **Security headers** HSTS, X-Content-Type-Options, X-Frame-Options sur tous les services
-- **BasicAuth** Caddy sur tous les services internes (Sonarr, Radarr, Prowlarr, Homarr, qBittorrent)
-- **Fail2ban** actif sur SSH (ban 24h apres 3 echecs) et BasicAuth Caddy (ban 1h apres 5 echecs)
+- **BasicAuth** nginx sur tous les services internes (Sonarr, Radarr, Prowlarr, Homarr, qBittorrent)
+- **Fail2ban** actif sur SSH (ban 24h apres 3 echecs) et BasicAuth nginx (ban 1h apres 5 echecs)
 - **SSH durci** : port custom, password auth desactive, root login desactive
 - **Plex en lecture seule** : volumes media montes en `:ro`
 - **Donnees sensibles** : tout dans `.env`, jamais en dur dans les fichiers versionnes
@@ -180,8 +214,12 @@ media-stack/
 # Verifier que qBittorrent tourne bien derriere le VPN
 docker exec gluetun wget -qO- https://ipinfo.io/json
 
+# Verifier le tunnel WireGuard vers la Freebox
+wg show wg-freebox
+ping -c 3 FREEBOX_WG_IP
+
 # Voir les logs de sync rclone
-tail -f /var/log/rclone-sync.log
+docker logs -f rclone
 
 # Logs d'un service specifique
 docker logs -f sonarr
@@ -194,7 +232,10 @@ docker compose ps
 
 # Verifier les bans fail2ban
 docker exec fail2ban fail2ban-client status
-docker exec fail2ban fail2ban-client status caddy-auth
+docker exec fail2ban fail2ban-client status nginx-auth
+
+# Tester la config nginx
+nginx -t && systemctl reload nginx
 ```
 
 ## Sync avancee (optionnel)

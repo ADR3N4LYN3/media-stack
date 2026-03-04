@@ -24,3 +24,25 @@ services:
         soft: 65536
         hard: 65536
     restart: unless-stopped
+
+  # ──────────────────────────────────────────────
+  # SFTP — Réception des fichiers depuis le VPS
+  # Accessible uniquement via le tunnel WireGuard
+  # ──────────────────────────────────────────────
+  sftp:
+    image: lscr.io/linuxserver/openssh-server:latest
+    container_name: sftp
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - SUDO_ACCESS=false
+      - PASSWORD_ACCESS=false
+      - USER_NAME=${SFTP_USER}
+      - PUBLIC_KEY_FILE=/config/ssh/authorized_key
+    ports:
+      - "${WG_FREEBOX_IP}:2222:2222"
+    volumes:
+      - ./config/sftp:/config
+      - ${MEDIA_PATH}:/data
+    restart: unless-stopped

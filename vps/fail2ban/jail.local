@@ -11,10 +11,10 @@ logpath  = /var/log/auth.log
 maxretry = 3
 bantime  = 24h
 
-[caddy-auth]
+[nginx-auth]
 enabled  = true
 port     = http,https
-filter   = caddy-auth
-logpath  = /var/log/caddy/access.log
+filter   = nginx-auth
+logpath  = /var/log/nginx/error.log
 maxretry = 5
 bantime  = 1h

@@ -24,6 +24,9 @@ vps/config/homarr/
 vps/config/qbittorrent/*
 !vps/config/qbittorrent/qBittorrent.conf
 
+# Freebox SFTP (contient cles SSH)
+freebox/config/sftp/
+
 # Logs
 *.log
 

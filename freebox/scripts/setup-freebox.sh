@@ -60,16 +60,13 @@ chown -R "${PUID}:${PGID}" /opt/plex
 
 ok "Répertoires créés avec permissions ${PUID}:${PGID}"
 
-# ── 3. Configuration SSH ──
+# ── 3. Configuration SFTP (conteneur openssh-server) ──
 
-info "Configuration SSH..."
+info "Configuration du conteneur SFTP..."
 
-mkdir -p ~/.ssh
-chmod 700 ~/.ssh
-touch ~/.ssh/authorized_keys
-chmod 600 ~/.ssh/authorized_keys
+mkdir -p "$PROJECT_DIR/config/sftp/ssh"
 
-ok "Répertoire SSH configuré (permissions 700/600)"
+ok "Répertoire config SFTP créé"
 
 # ── 4. Copie .env.example → .env ──
 
@@ -125,11 +122,13 @@ ok "Toutes les variables sont configurées"
 
 source "$PROJECT_DIR/.env"
 
-# ── 6. Ajout clé SSH publique du VPS ──
+# ── 6. Ajout clé SSH publique du VPS (pour SFTP) ──
+
+AUTHORIZED_KEY="$PROJECT_DIR/config/sftp/ssh/authorized_key"
 
 echo ""
 echo "═══════════════════════════════════════════"
-echo "  Clé SSH du VPS"
+echo "  Clé SSH du VPS (pour SFTP via WireGuard)"
 echo "═══════════════════════════════════════════"
 echo ""
 echo "Colle la clé publique SSH du VPS (affichée par setup.sh côté VPS) :"
@@ -138,14 +137,15 @@ echo ""
 read -rp "Clé publique : " ssh_pubkey
 
 if [ -n "$ssh_pubkey" ]; then
-    if ! grep -qF "$ssh_pubkey" ~/.ssh/authorized_keys 2>/dev/null; then
-        echo "$ssh_pubkey" >> ~/.ssh/authorized_keys
-        ok "Clé SSH ajoutée à ~/.ssh/authorized_keys"
+    if [ ! -f "$AUTHORIZED_KEY" ] || ! grep -qF "$ssh_pubkey" "$AUTHORIZED_KEY" 2>/dev/null; then
+        echo "$ssh_pubkey" > "$AUTHORIZED_KEY"
+        chmod 644 "$AUTHORIZED_KEY"
+        ok "Clé SSH ajoutée pour le conteneur SFTP"
     else
         ok "Clé SSH déjà présente"
     fi
 else
-    warn "Clé SSH ignorée. Ajoute-la manuellement plus tard."
+    warn "Clé SSH ignorée. Ajoute-la manuellement dans config/sftp/ssh/authorized_key"
 fi
 
 # ── 7. Lancement ──
@@ -157,7 +157,7 @@ if [[ ! "$confirm" =~ ^[oOyY]$ ]]; then
     exit 0
 fi
 
-info "Démarrage de Plex..."
+info "Démarrage de Plex + SFTP..."
 docker compose up -d
 
 # ── 8. Attente que Plex soit accessible ──
@@ -189,10 +189,11 @@ fi
 
 echo ""
 echo "═══════════════════════════════════════════"
-echo "  Plex Media Server démarré !"
+echo "  Plex + SFTP démarrés !"
 echo "═══════════════════════════════════════════"
 echo ""
-echo -e "  ${GREEN}Plex${NC} → http://${FREEBOX_IP}:32400/web"
+echo -e "  ${GREEN}Plex${NC}  → http://${FREEBOX_IP}:32400/web"
+echo -e "  ${GREEN}SFTP${NC}  → ${WG_FREEBOX_IP:-?}:2222 (via tunnel WireGuard)"
 echo ""
 echo "  Prochaines étapes :"
 echo "  1. Ouvre Plex et termine la configuration initiale"
