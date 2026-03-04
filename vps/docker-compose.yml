@@ -1,0 +1,295 @@
+services:
+  # ──────────────────────────────────────────────
+  # VPN — Tout le trafic qBittorrent passe par ici
+  # ──────────────────────────────────────────────
+  gluetun:
+    image: qmcgaw/gluetun:latest
+    container_name: gluetun
+    cap_add:
+      - NET_ADMIN
+    cap_drop:
+      - ALL
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    ports:
+      - "127.0.0.1:${PORT_QBITTORRENT}:8080"
+    environment:
+      - VPN_SERVICE_PROVIDER=mullvad
+      - VPN_TYPE=wireguard
+      - WIREGUARD_PRIVATE_KEY=${WIREGUARD_PRIVATE_KEY}
+      - WIREGUARD_ADDRESSES=${WIREGUARD_ADDRESSES}
+      - SERVER_COUNTRIES=Finland
+      - FIREWALL_OUTBOUND_SUBNETS=172.16.0.0/12
+      - BLOCK_MALICIOUS=on
+      - BLOCK_ADS=off
+      - DNS_KEEP_NAMESERVER=off
+      - DNS_ADDRESS=1.1.1.1
+    volumes:
+      - ./config/gluetun:/gluetun
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "https://ipinfo.io/ip"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - media_network
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────
+  # Client torrent — Derrière le VPN obligatoirement
+  # ──────────────────────────────────────────────
+  qbittorrent:
+    image: linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - WEBUI_PORT=8080
+    volumes:
+      - ./config/qbittorrent:/config
+      - ${DOWNLOADS_PATH}:/downloads
+    security_opt:
+      - "no-new-privileges:true"
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────
+  # Indexeurs torrent centralisés
+  # ──────────────────────────────────────────────
+  prowlarr:
+    image: linuxserver/prowlarr:latest
+    container_name: prowlarr
+    read_only: true
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - ./config/prowlarr:/config
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9696/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    security_opt:
+      - "no-new-privileges:true"
+    networks:
+      - media_network
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────
+  # Gestion des séries TV
+  # ──────────────────────────────────────────────
+  sonarr:
+    image: linuxserver/sonarr:latest
+    container_name: sonarr
+    read_only: true
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - ./config/sonarr:/config
+      - ${DOWNLOADS_PATH}/complete:/downloads/complete
+      - ${MEDIA_PATH}/series:/tv
+    tmpfs:
+      - /tmp
+    depends_on:
+      prowlarr:
+        condition: service_healthy
+    security_opt:
+      - "no-new-privileges:true"
+    networks:
+      - media_network
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────
+  # Gestion des films
+  # ──────────────────────────────────────────────
+  radarr:
+    image: linuxserver/radarr:latest
+    container_name: radarr
+    read_only: true
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - ./config/radarr:/config
+      - ${DOWNLOADS_PATH}/complete:/downloads/complete
+      - ${MEDIA_PATH}/films:/movies
+    tmpfs:
+      - /tmp
+    depends_on:
+      prowlarr:
+        condition: service_healthy
+    security_opt:
+      - "no-new-privileges:true"
+    networks:
+      - media_network
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────
+  # Interface de demande utilisateur
+  # ──────────────────────────────────────────────
+  overseerr:
+    image: linuxserver/overseerr:latest
+    container_name: overseerr
+    read_only: true
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - ./config/overseerr:/app/config
+    tmpfs:
+      - /tmp
+    security_opt:
+      - "no-new-privileges:true"
+    networks:
+      - media_network
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────
+  # Dashboard de monitoring
+  # ──────────────────────────────────────────────
+  homarr:
+    image: ghcr.io/homarr-labs/homarr:latest
+    container_name: homarr
+    read_only: true
+    environment:
+      - TZ=${TZ}
+      - DEFAULT_COLOR_SCHEME=dark
+    volumes:
+      - ./config/homarr/configs:/app/data/configs
+      - ./config/homarr/icons:/app/public/icons
+      - ./config/homarr/data:/data
+    tmpfs:
+      - /tmp
+    security_opt:
+      - "no-new-privileges:true"
+    networks:
+      - media_network
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────
+  # Sync VPS → Freebox via SFTP (toutes les 5 min)
+  # ──────────────────────────────────────────────
+  rclone:
+    image: rclone/rclone:latest
+    container_name: rclone
+    command: >
+      sh -c "while true; do
+        echo \"[$$(date '+%Y-%m-%d %H:%M:%S')] Sync vers Freebox...\";
+        rclone sync /source freebox:${FREEBOX_MEDIA_PATH}
+          --config=/config/rclone/rclone.conf
+          --transfers=4
+          --checkers=8
+          --multi-thread-streams=4
+          --buffer-size=64M
+          --use-mmap
+          --log-level=INFO
+          --stats=60s
+          --exclude '*.part'
+          --exclude '*.!qB';
+        echo \"[$$(date '+%Y-%m-%d %H:%M:%S')] Sync terminé.\";
+        sleep 300;
+      done"
+    volumes:
+      - ${MEDIA_PATH}:/source:ro
+      - ./config/rclone:/config/rclone:ro
+      - ./config/rclone/id_rsa:/root/.ssh/id_rsa:ro
+    depends_on:
+      - sonarr
+      - radarr
+    security_opt:
+      - "no-new-privileges:true"
+    networks:
+      - media_network
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────
+  # Reverse proxy HTTPS automatique
+  # ──────────────────────────────────────────────
+  caddy:
+    image: caddy:latest
+    container_name: caddy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      - DOMAIN=${DOMAIN}
+      - CADDY_USER=${CADDY_USER}
+      - CADDY_PASSWORD_HASH=${CADDY_PASSWORD_HASH}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - /var/log/caddy:/var/log/caddy
+    security_opt:
+      - "no-new-privileges:true"
+    networks:
+      - media_network
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────
+  # Protection brute-force SSH + BasicAuth
+  # ──────────────────────────────────────────────
+  fail2ban:
+    image: crazymax/fail2ban:latest
+    container_name: fail2ban
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    environment:
+      - TZ=${TZ}
+      - F2B_LOG_LEVEL=INFO
+    volumes:
+      - /var/log:/var/log:ro
+      - ./fail2ban/jail.local:/etc/fail2ban/jail.local:ro
+      - ./fail2ban/filter.d:/etc/fail2ban/filter.d:ro
+      - fail2ban_data:/var/lib/fail2ban
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────
+  # Mise à jour automatique des images Docker
+  # ──────────────────────────────────────────────
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: watchtower
+    environment:
+      - TZ=${TZ}
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_SCHEDULE=0 0 3 * * *
+      - WATCHTOWER_INCLUDE_STOPPED=false
+      - WATCHTOWER_NOTIFICATIONS=${WATCHTOWER_NOTIFICATIONS:-}
+      - WATCHTOWER_NOTIFICATION_SLACK_HOOK_URL=${WEBHOOK_URL:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    security_opt:
+      - "no-new-privileges:true"
+    networks:
+      - media_network
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
+  fail2ban_data:
+
+networks:
+  media_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

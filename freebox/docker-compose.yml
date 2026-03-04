@@ -1,0 +1,26 @@
+services:
+  # ──────────────────────────────────────────────
+  # Plex Media Server — Lecture 4K direct play
+  # ──────────────────────────────────────────────
+  plex:
+    image: plexinc/pms-docker:latest
+    container_name: plex
+    network_mode: host
+    environment:
+      - PLEX_CLAIM=${PLEX_CLAIM}
+      - ADVERTISE_IP=http://${FREEBOX_IP}:32400/
+      - TZ=${TZ}
+      - PLEX_UID=${PUID}
+      - PLEX_GID=${PGID}
+    volumes:
+      - /opt/plex/config:/config
+      - /opt/plex/transcode:/transcode
+      - ${MEDIA_PATH}/films:/data/films:ro
+      - ${MEDIA_PATH}/series:/data/series:ro
+    devices:
+      - /dev/dri:/dev/dri
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    restart: unless-stopped

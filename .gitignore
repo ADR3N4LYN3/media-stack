@@ -1,0 +1,33 @@
+# Fichiers d'environnement (contiennent des secrets)
+.env
+vps/.env
+freebox/.env
+
+# Cles et certificats
+*.key
+*.pem
+vps/config/rclone/id_rsa
+vps/config/rclone/id_rsa.pub
+vps/config/rclone/known_hosts
+
+# Config generee
+vps/config/rclone/rclone.conf
+
+# Config des services Docker (donnees runtime)
+vps/config/sonarr/
+vps/config/radarr/
+vps/config/prowlarr/
+vps/config/overseerr/
+vps/config/gluetun/
+vps/config/homarr/
+# qBittorrent : on versionne le .conf initial mais pas le reste du runtime
+vps/config/qbittorrent/*
+!vps/config/qbittorrent/qBittorrent.conf
+
+# Logs
+*.log
+
+# Docker volumes
+caddy_data/
+caddy_config/
+fail2ban_data/

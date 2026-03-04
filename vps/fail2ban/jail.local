@@ -1,0 +1,20 @@
+[DEFAULT]
+bantime  = 1h
+findtime = 10m
+maxretry = 5
+backend  = auto
+
+[sshd]
+enabled  = true
+port     = ssh
+logpath  = /var/log/auth.log
+maxretry = 3
+bantime  = 24h
+
+[caddy-auth]
+enabled  = true
+port     = http,https
+filter   = caddy-auth
+logpath  = /var/log/caddy/access.log
+maxretry = 5
+bantime  = 1h
