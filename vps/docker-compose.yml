@@ -171,6 +171,7 @@ services:
       - HOMEPAGE_VAR_PROWLARR_KEY=${HOMEPAGE_PROWLARR_KEY}
       - HOMEPAGE_VAR_OVERSEERR_KEY=${HOMEPAGE_OVERSEERR_KEY}
       - HOMEPAGE_VAR_QBIT_PASSWORD=${HOMEPAGE_QBIT_PASSWORD}
+      - HOMEPAGE_ALLOWED_HOSTS=home.${DOMAIN}
     volumes:
       - ./config/homepage:/app/config
     ports:

@@ -162,7 +162,7 @@ server {
     }
 }
 
-# ── Homarr / Dashboard (basic auth) ──
+# ── Homepage / Dashboard (basic auth) ──
 server {
     listen 80;
     server_name home.DOMAIN_PLACEHOLDER;
