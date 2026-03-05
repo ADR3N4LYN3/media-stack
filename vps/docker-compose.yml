@@ -55,6 +55,7 @@ services:
       - PGID=${PGID}
       - TZ=${TZ}
       - WEBUI_PORT=8080
+      - QBIT_PASSWORD=${QBIT_PASSWORD:-}
     volumes:
       - ./config/qbittorrent:/config
       - ${DOWNLOADS_PATH}:/downloads
@@ -171,7 +172,7 @@ services:
       - HOMEPAGE_VAR_SONARR_KEY=${HOMEPAGE_SONARR_KEY}
       - HOMEPAGE_VAR_PROWLARR_KEY=${HOMEPAGE_PROWLARR_KEY}
       - HOMEPAGE_VAR_OVERSEERR_KEY=${HOMEPAGE_OVERSEERR_KEY}
-      - HOMEPAGE_VAR_QBIT_PASSWORD=${HOMEPAGE_QBIT_PASSWORD}
+      - HOMEPAGE_VAR_QBIT_PASSWORD=${QBIT_PASSWORD}
       - HOMEPAGE_ALLOWED_HOSTS=home.${DOMAIN}
     volumes:
       - ./config/homepage:/app/config
