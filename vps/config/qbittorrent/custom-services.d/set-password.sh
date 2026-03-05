@@ -1,6 +1,7 @@
 #!/usr/bin/with-contenv sh
 # Set qBittorrent WebUI password + disable CSRF via API after startup
 # Runs as custom-services.d service (linuxserver) — executes AFTER qBittorrent starts
+# Uses bypass_local_auth (enabled by default) so no login needed from localhost
 
 if [ -z "$QBIT_PASSWORD" ]; then
     echo "[set-password] QBIT_PASSWORD not set, skipping"
@@ -9,30 +10,25 @@ fi
 
 echo "[set-password] Waiting for qBittorrent API..."
 
-for i in $(seq 1 30); do
+for i in $(seq 1 40); do
     sleep 3
 
-    # Get temporary password from qBittorrent log
-    TEMP_PASS=$(grep 'temporary password' /config/qBittorrent/logs/qbittorrent.log 2>/dev/null | tail -1 | awk '{print $NF}')
-    [ -z "$TEMP_PASS" ] && continue
+    # Check if API is up (bypass_local_auth allows unauthenticated access from localhost)
+    VERSION=$(curl -s http://localhost:8080/api/v2/app/version 2>/dev/null)
+    [ -z "$VERSION" ] && continue
 
-    # Try login with temp password
-    SID=$(curl -s -c - -d "username=admin&password=$TEMP_PASS" http://localhost:8080/api/v2/auth/login 2>/dev/null | grep SID | awk '{print $NF}')
+    echo "[set-password] API is up ($VERSION), configuring..."
 
-    # If temp password doesn't work, password was already set — try with QBIT_PASSWORD
-    if [ -z "$SID" ]; then
-        SID=$(curl -s -c - -d "username=admin&password=$QBIT_PASSWORD" http://localhost:8080/api/v2/auth/login 2>/dev/null | grep SID | awk '{print $NF}')
+    # Set password + disable CSRF + enable reverse proxy (no auth needed from localhost)
+    RESULT=$(curl -s -w '%{http_code}' -d 'json={"web_ui_password":"'"$QBIT_PASSWORD"'","web_ui_csrf_protection_enabled":false,"web_ui_reverse_proxy_enabled":true}' http://localhost:8080/api/v2/app/setPreferences 2>/dev/null)
+
+    if echo "$RESULT" | grep -q "200"; then
+        echo "[set-password] qBittorrent password set + CSRF disabled + reverse proxy enabled"
+        sleep infinity
     fi
 
-    [ -z "$SID" ] && continue
-
-    # Set password + disable CSRF + enable reverse proxy
-    curl -s -b "SID=$SID" -d 'json={"web_ui_password":"'"$QBIT_PASSWORD"'","web_ui_csrf_protection_enabled":false,"web_ui_reverse_proxy_enabled":true}' http://localhost:8080/api/v2/app/setPreferences 2>/dev/null
-
-    echo "[set-password] qBittorrent password set + CSRF disabled + reverse proxy enabled"
-    # Service done — sleep forever to keep s6 happy
-    sleep infinity
+    echo "[set-password] API returned: $RESULT, retrying..."
 done
 
-echo "[set-password] Failed to set qBittorrent password after 90s"
+echo "[set-password] Failed to configure qBittorrent after 120s"
 sleep infinity
