@@ -34,7 +34,7 @@ server {
     }
 }
 
-# ── Sonarr (basic auth) ──
+# ── Sonarr (pas de basic auth, auth interne) ──
 server {
     listen 80;
     server_name sonarr.DOMAIN_PLACEHOLDER;
@@ -52,9 +52,6 @@ server {
     add_header X-Frame-Options "SAMEORIGIN" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-
-    auth_basic "Media Stack";
-    auth_basic_user_file /etc/nginx/.htpasswd-media;
 
     location / {
         proxy_pass http://127.0.0.1:8989;
@@ -66,7 +63,7 @@ server {
     }
 }
 
-# ── Radarr (basic auth) ──
+# ── Radarr (pas de basic auth, auth interne) ──
 server {
     listen 80;
     server_name radarr.DOMAIN_PLACEHOLDER;
@@ -84,9 +81,6 @@ server {
     add_header X-Frame-Options "SAMEORIGIN" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-
-    auth_basic "Media Stack";
-    auth_basic_user_file /etc/nginx/.htpasswd-media;
 
     location / {
         proxy_pass http://127.0.0.1:7878;
@@ -98,7 +92,7 @@ server {
     }
 }
 
-# ── Prowlarr (basic auth) ──
+# ── Prowlarr (pas de basic auth, auth interne) ──
 server {
     listen 80;
     server_name prowlarr.DOMAIN_PLACEHOLDER;
@@ -116,9 +110,6 @@ server {
     add_header X-Frame-Options "SAMEORIGIN" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-
-    auth_basic "Media Stack";
-    auth_basic_user_file /etc/nginx/.htpasswd-media;
 
     location / {
         proxy_pass http://127.0.0.1:9696;
@@ -130,7 +121,7 @@ server {
     }
 }
 
-# ── qBittorrent (basic auth) ──
+# ── qBittorrent (pas de basic auth, auth interne) ──
 server {
     listen 80;
     server_name qbittorrent.DOMAIN_PLACEHOLDER;
@@ -148,9 +139,6 @@ server {
     add_header X-Frame-Options "SAMEORIGIN" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-
-    auth_basic "Media Stack";
-    auth_basic_user_file /etc/nginx/.htpasswd-media;
 
     location / {
         proxy_pass http://127.0.0.1:8080;
