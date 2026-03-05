@@ -265,8 +265,8 @@ services:
       - WATCHTOWER_CLEANUP=true
       - WATCHTOWER_SCHEDULE=0 0 3 * * *
       - WATCHTOWER_INCLUDE_STOPPED=false
-      - WATCHTOWER_NOTIFICATIONS=${WATCHTOWER_NOTIFICATIONS:-}
-      - WATCHTOWER_NOTIFICATION_SLACK_HOOK_URL=${WEBHOOK_URL:-}
+      - WATCHTOWER_NOTIFICATIONS=shoutrrr
+      - WATCHTOWER_NOTIFICATION_URL=discord://${DISCORD_WEBHOOK_TOKEN}@${DISCORD_WEBHOOK_ID}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     security_opt:
