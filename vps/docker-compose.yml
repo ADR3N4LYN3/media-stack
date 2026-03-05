@@ -197,7 +197,7 @@ services:
           sleep 300
         done
     volumes:
-      - ${MEDIA_PATH}:/source:ro
+      - ${MEDIA_PATH}:/source
       - ./config/rclone:/config/rclone:ro
       - ./config/rclone/id_rsa:/root/.ssh/id_rsa:ro
     depends_on:
