@@ -8,7 +8,6 @@
     memory: true
     disk: /
 - resources:
-    label: Volume
     disk: /mnt/HC_Volume_104978745
 
 - datetime:
