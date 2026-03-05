@@ -10,6 +10,9 @@ layout:
   Downloads:
     style: row
     columns: 2
+  Système:
+    style: row
+    columns: 1
   Calendrier:
     style: column
     columns: 1

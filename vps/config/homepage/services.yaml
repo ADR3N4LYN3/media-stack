@@ -46,6 +46,12 @@
           url: http://prowlarr:9696
           key: "{{HOMEPAGE_VAR_PROWLARR_KEY}}"
 
+- Système:
+    - Dozzle:
+        icon: dozzle.svg
+        href: https://logs.{{HOMEPAGE_VAR_DOMAIN}}
+        description: Logs Docker en temps réel
+
 - Calendrier:
     - Sorties:
         widget:

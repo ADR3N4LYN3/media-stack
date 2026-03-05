@@ -235,6 +235,25 @@ services:
     restart: unless-stopped
 
   # ──────────────────────────────────────────────
+  # Visualiseur de logs Docker (web)
+  # ──────────────────────────────────────────────
+  dozzle:
+    image: amir20/dozzle:latest
+    container_name: dozzle
+    environment:
+      - TZ=${TZ}
+      - DOZZLE_NO_ANALYTICS=true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "127.0.0.1:9999:8080"
+    security_opt:
+      - "no-new-privileges:true"
+    networks:
+      - media_network
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────
   # Mise à jour automatique des images Docker
   # ──────────────────────────────────────────────
   watchtower:
