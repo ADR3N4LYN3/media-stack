@@ -188,7 +188,7 @@ services:
     network_mode: host
     entrypoint: /bin/sh
     command: >
-      sh -c "while true; do
+      -c "while true; do
         echo \"[$$(date '+%Y-%m-%d %H:%M:%S')] Sync vers Freebox...\";
         rclone sync /source freebox:${FREEBOX_MEDIA_PATH}
           --config=/config/rclone/rclone.conf
