@@ -45,24 +45,3 @@
           type: prowlarr
           url: http://prowlarr:9696
           key: "{{HOMEPAGE_VAR_PROWLARR_KEY}}"
-
-- Calendrier:
-    - Sonarr:
-        icon: sonarr.svg
-        href: https://sonarr.{{HOMEPAGE_VAR_DOMAIN}}/calendar
-        description: Prochains épisodes
-        widget:
-          type: sonarr
-          url: http://sonarr:8989
-          key: "{{HOMEPAGE_VAR_SONARR_KEY}}"
-          enableQueue: true
-
-    - Radarr:
-        icon: radarr.svg
-        href: https://radarr.{{HOMEPAGE_VAR_DOMAIN}}/calendar
-        description: Prochains films
-        widget:
-          type: radarr
-          url: http://radarr:7878
-          key: "{{HOMEPAGE_VAR_RADARR_KEY}}"
-          enableQueue: true
