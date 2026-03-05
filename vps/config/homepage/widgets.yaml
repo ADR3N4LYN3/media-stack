@@ -6,9 +6,10 @@
 - resources:
     cpu: true
     memory: true
-    disk:
-      - /
-      - /mnt/HC_Volume_104978745
+    disk: /
+- resources:
+    label: Volume
+    disk: /mnt/HC_Volume_104978745
 
 - datetime:
     text_size: xl
