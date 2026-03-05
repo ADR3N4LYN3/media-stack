@@ -102,7 +102,7 @@ services:
       - TZ=${TZ}
     volumes:
       - ./config/sonarr:/config
-      - ${DOWNLOADS_PATH}/complete:/downloads/complete
+      - ${DOWNLOADS_PATH}:/downloads
       - ${MEDIA_PATH}/series:/tv
     ports:
       - "127.0.0.1:8989:8989"
@@ -127,7 +127,7 @@ services:
       - TZ=${TZ}
     volumes:
       - ./config/radarr:/config
-      - ${DOWNLOADS_PATH}/complete:/downloads/complete
+      - ${DOWNLOADS_PATH}:/downloads
       - ${MEDIA_PATH}/films:/movies
     ports:
       - "127.0.0.1:7878:7878"
