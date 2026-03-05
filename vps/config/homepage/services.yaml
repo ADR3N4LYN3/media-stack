@@ -7,7 +7,6 @@
           type: overseerr
           url: http://overseerr:5055
           key: "{{HOMEPAGE_VAR_OVERSEERR_KEY}}"
-          fields: ["pending", "approved", "available"]
 
     - Radarr:
         icon: radarr.svg
@@ -17,7 +16,6 @@
           type: radarr
           url: http://radarr:7878
           key: "{{HOMEPAGE_VAR_RADARR_KEY}}"
-          fields: ["wanted", "queued", "movies"]
 
     - Sonarr:
         icon: sonarr.svg
@@ -27,7 +25,6 @@
           type: sonarr
           url: http://sonarr:8989
           key: "{{HOMEPAGE_VAR_SONARR_KEY}}"
-          fields: ["wanted", "queued", "series"]
 
 - Downloads:
     - qBittorrent:
@@ -39,7 +36,6 @@
           url: http://gluetun:8080
           username: admin
           password: "{{HOMEPAGE_VAR_QBIT_PASSWORD}}"
-          fields: ["leech", "download", "seed", "upload"]
 
     - Prowlarr:
         icon: prowlarr.svg
@@ -49,7 +45,6 @@
           type: prowlarr
           url: http://prowlarr:9696
           key: "{{HOMEPAGE_VAR_PROWLARR_KEY}}"
-          fields: ["numberOfGrabs", "numberOfQueries", "numberOfFailGrabs", "numberOfFailQueries"]
 
 - Calendrier:
     - Sorties:
