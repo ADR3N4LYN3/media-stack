@@ -7,6 +7,7 @@ services:
     container_name: gluetun
     cap_add:
       - NET_ADMIN
+      - NET_RAW
     cap_drop:
       - ALL
     devices:
@@ -26,6 +27,8 @@ services:
       - DNS_ADDRESS=1.1.1.1
     volumes:
       - ./config/gluetun:/gluetun
+    tmpfs:
+      - /tmp/gluetun
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "https://ipinfo.io/ip"]
       interval: 30s
