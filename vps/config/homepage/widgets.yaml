@@ -8,15 +8,9 @@
     memory: true
     disk: /
 
-- calendar:
-    firstDayInWeek: monday
-    view: monthly
-    maxEvents: 10
-    showTime: true
-    integrations:
-      - type: sonarr
-        service_group: Media
-        service_name: Sonarr
-      - type: radarr
-        service_group: Media
-        service_name: Radarr
+- datetime:
+    text_size: xl
+    format:
+      dateStyle: long
+      timeStyle: short
+      hour12: false
