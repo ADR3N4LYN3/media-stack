@@ -1,0 +1,4 @@
+- search:
+    provider: overseerr
+    target: _blank
+    url: https://overseerr.{{HOMEPAGE_VAR_DOMAIN}}

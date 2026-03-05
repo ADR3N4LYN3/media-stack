@@ -1,0 +1,47 @@
+- Media:
+    - Overseerr:
+        icon: overseerr.svg
+        href: https://overseerr.{{HOMEPAGE_VAR_DOMAIN}}
+        description: Demandes de films et séries
+        widget:
+          type: overseerr
+          url: http://overseerr:5055
+          key: "{{HOMEPAGE_VAR_OVERSEERR_KEY}}"
+
+    - Radarr:
+        icon: radarr.svg
+        href: https://radarr.{{HOMEPAGE_VAR_DOMAIN}}
+        description: Gestion des films
+        widget:
+          type: radarr
+          url: http://radarr:7878
+          key: "{{HOMEPAGE_VAR_RADARR_KEY}}"
+
+    - Sonarr:
+        icon: sonarr.svg
+        href: https://sonarr.{{HOMEPAGE_VAR_DOMAIN}}
+        description: Gestion des séries
+        widget:
+          type: sonarr
+          url: http://sonarr:8989
+          key: "{{HOMEPAGE_VAR_SONARR_KEY}}"
+
+- Downloads:
+    - qBittorrent:
+        icon: qbittorrent.svg
+        href: https://qbittorrent.{{HOMEPAGE_VAR_DOMAIN}}
+        description: Client torrent (Mullvad VPN)
+        widget:
+          type: qbittorrent
+          url: http://gluetun:8080
+          username: admin
+          password: "{{HOMEPAGE_VAR_QBIT_PASSWORD}}"
+
+    - Prowlarr:
+        icon: prowlarr.svg
+        href: https://prowlarr.{{HOMEPAGE_VAR_DOMAIN}}
+        description: Indexeurs torrent
+        widget:
+          type: prowlarr
+          url: http://prowlarr:9696
+          key: "{{HOMEPAGE_VAR_PROWLARR_KEY}}"

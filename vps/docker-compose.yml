@@ -158,21 +158,23 @@ services:
     restart: unless-stopped
 
   # ──────────────────────────────────────────────
-  # Dashboard de monitoring
+  # Dashboard
   # ──────────────────────────────────────────────
-  homarr:
-    image: ghcr.io/homarr-labs/homarr:latest
-    container_name: homarr
+  homepage:
+    image: ghcr.io/gethomepage/homepage:latest
+    container_name: homepage
     environment:
       - TZ=${TZ}
-      - DEFAULT_COLOR_SCHEME=dark
-      - SECRET_ENCRYPTION_KEY=${HOMARR_SECRET_KEY}
+      - HOMEPAGE_VAR_DOMAIN=${DOMAIN}
+      - HOMEPAGE_VAR_RADARR_KEY=${HOMEPAGE_RADARR_KEY}
+      - HOMEPAGE_VAR_SONARR_KEY=${HOMEPAGE_SONARR_KEY}
+      - HOMEPAGE_VAR_PROWLARR_KEY=${HOMEPAGE_PROWLARR_KEY}
+      - HOMEPAGE_VAR_OVERSEERR_KEY=${HOMEPAGE_OVERSEERR_KEY}
+      - HOMEPAGE_VAR_QBIT_PASSWORD=${HOMEPAGE_QBIT_PASSWORD}
     volumes:
-      - ./config/homarr/configs:/app/data/configs
-      - ./config/homarr/icons:/app/public/icons
-      - ./config/homarr/data:/data
+      - ./config/homepage:/app/config
     ports:
-      - "127.0.0.1:7575:7575"
+      - "127.0.0.1:7575:3000"
     security_opt:
       - "no-new-privileges:true"
     networks:
