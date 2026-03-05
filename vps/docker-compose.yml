@@ -186,6 +186,7 @@ services:
     image: rclone/rclone:latest
     container_name: rclone
     network_mode: host
+    entrypoint: /bin/sh
     command: >
       sh -c "while true; do
         echo \"[$$(date '+%Y-%m-%d %H:%M:%S')] Sync vers Freebox...\";
