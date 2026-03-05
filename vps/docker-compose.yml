@@ -8,8 +8,8 @@ services:
     cap_add:
       - NET_ADMIN
       - NET_RAW
-    cap_drop:
-      - ALL
+      - CHOWN
+      - DAC_OVERRIDE
     devices:
       - /dev/net/tun:/dev/net/tun
     ports:
@@ -34,7 +34,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 60s
     networks:
       - media_network
     restart: unless-stopped
