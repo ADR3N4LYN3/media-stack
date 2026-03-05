@@ -166,6 +166,7 @@ services:
     environment:
       - TZ=${TZ}
       - DEFAULT_COLOR_SCHEME=dark
+      - SECRET_ENCRYPTION_KEY=${HOMARR_SECRET_KEY}
     volumes:
       - ./config/homarr/configs:/app/data/configs
       - ./config/homarr/icons:/app/public/icons
