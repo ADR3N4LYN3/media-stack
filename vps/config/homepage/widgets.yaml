@@ -3,9 +3,6 @@
     target: _blank
     url: https://overseerr.{{HOMEPAGE_VAR_DOMAIN}}
 
-- greeting:
-    text: Bienvenue, Adrian
-
 - resources:
     cpu: true
     memory: true

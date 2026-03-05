@@ -10,6 +10,9 @@ layout:
   Downloads:
     style: row
     columns: 2
+  Calendrier:
+    style: row
+    columns: 2
   Bookmarks:
     style: row
     columns: 4
