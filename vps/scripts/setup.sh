@@ -81,14 +81,6 @@ fi
 
 info "Création des répertoires..."
 
-mkdir -p /data/downloads/complete
-mkdir -p /data/downloads/incomplete
-mkdir -p /data/media/films
-mkdir -p /data/media/series
-mkdir -p "$PROJECT_DIR/config/homarr/configs"
-mkdir -p "$PROJECT_DIR/config/homarr/icons"
-mkdir -p "$PROJECT_DIR/config/homarr/data"
-
 # Charger PUID/PGID depuis .env si disponible, sinon défaut 1000
 PUID="${PUID:-1000}"
 PGID="${PGID:-1000}"
@@ -97,7 +89,31 @@ if [ -f "$PROJECT_DIR/.env" ]; then
     source <(grep -E '^(PUID|PGID)=' "$PROJECT_DIR/.env")
 fi
 
+# Données media
+mkdir -p /data/downloads/complete
+mkdir -p /data/downloads/incomplete
+mkdir -p /data/media/films
+mkdir -p /data/media/series
 chown -R "${PUID}:${PGID}" /data
+
+# Configs des services (permissions correctes dès la création)
+CONFIG_DIRS=(
+    "gluetun"
+    "qbittorrent"
+    "prowlarr"
+    "sonarr"
+    "radarr"
+    "overseerr"
+    "homarr/configs"
+    "homarr/icons"
+    "homarr/data"
+)
+
+for dir in "${CONFIG_DIRS[@]}"; do
+    mkdir -p "$PROJECT_DIR/config/$dir"
+done
+
+chown -R "${PUID}:${PGID}" "$PROJECT_DIR/config"
 ok "Répertoires créés avec permissions ${PUID}:${PGID}"
 
 # ── 3. Génération de la clé SSH pour rclone ──

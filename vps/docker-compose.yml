@@ -148,7 +148,7 @@ services:
       - PGID=${PGID}
       - TZ=${TZ}
     volumes:
-      - ./config/overseerr:/app/config
+      - ./config/overseerr:/config
     ports:
       - "127.0.0.1:5055:5055"
     security_opt:
