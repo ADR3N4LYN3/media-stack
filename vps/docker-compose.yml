@@ -202,7 +202,7 @@ services:
           rclone move /source/films freebox:${FREEBOX_MEDIA_PATH} --config=/config/rclone/rclone.conf --transfers=2 --checkers=8 --buffer-size=64M --use-mmap --log-level=INFO --stats=60s --exclude '*.part' --exclude '*.!qB' --delete-empty-src-dirs
           rclone move /source/series freebox:${FREEBOX_MEDIA_PATH} --config=/config/rclone/rclone.conf --transfers=2 --checkers=8 --buffer-size=64M --use-mmap --log-level=INFO --stats=60s --exclude '*.part' --exclude '*.!qB' --delete-empty-src-dirs
           echo "[`date '+%Y-%m-%d %H:%M:%S'`] Sync terminé."
-          sleep 300
+          sleep 60
         done
     volumes:
       - ${MEDIA_PATH}:/source
