@@ -58,6 +58,7 @@ services:
       - QBIT_PASSWORD=${QBIT_PASSWORD:-}
     volumes:
       - ./config/qbittorrent:/config
+      - ./config/qbittorrent/custom-cont-init.d:/custom-cont-init.d:ro
       - ${DOWNLOADS_PATH}:/downloads
     security_opt:
       - "no-new-privileges:true"
