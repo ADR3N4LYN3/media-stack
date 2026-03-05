@@ -25,6 +25,7 @@ services:
       - BLOCK_ADS=off
       - DNS_KEEP_NAMESERVER=off
       - DNS_ADDRESS=1.1.1.1
+      - FIREWALL_INPUT_PORTS=8080
     volumes:
       - ./config/gluetun:/gluetun
     tmpfs:
