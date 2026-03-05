@@ -177,6 +177,7 @@ services:
       - HOMEPAGE_ALLOWED_HOSTS=home.${DOMAIN}
     volumes:
       - ./config/homepage:/app/config
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     ports:
       - "127.0.0.1:7575:3000"
     security_opt:

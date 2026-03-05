@@ -1,1 +1,13 @@
-[]
+- Bookmarks:
+    - TMDB:
+        - icon: tmdb.svg
+          href: https://www.themoviedb.org
+    - AlloCiné:
+        - icon: https://www.allocine.fr/favicon.ico
+          href: https://www.allocine.fr
+    - SensCritique:
+        - icon: https://www.senscritique.com/favicon.ico
+          href: https://www.senscritique.com
+    - Trakt:
+        - icon: trakt.svg
+          href: https://trakt.tv
