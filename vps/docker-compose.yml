@@ -191,7 +191,7 @@ services:
       - |
         while true; do
           echo "[`date '+%Y-%m-%d %H:%M:%S'`] Sync vers Freebox..."
-          rclone sync /source freebox:${FREEBOX_MEDIA_PATH} --config=/config/rclone/rclone.conf --transfers=4 --checkers=8 --multi-thread-streams=4 --buffer-size=64M --use-mmap --log-level=INFO --stats=60s --exclude '*.part' --exclude '*.!qB'
+          rclone move /source freebox:${FREEBOX_MEDIA_PATH} --config=/config/rclone/rclone.conf --transfers=1 --checkers=8 --buffer-size=16M --use-mmap --log-level=INFO --stats=60s --exclude '*.part' --exclude '*.!qB' --delete-empty-src-dirs
           echo "[`date '+%Y-%m-%d %H:%M:%S'`] Sync terminé."
           sleep 300
         done
