@@ -30,7 +30,7 @@ services:
     tmpfs:
       - /tmp/gluetun
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "https://ipinfo.io/ip"]
+      test: ["CMD", "wget", "-qO-", "http://ipinfo.io/ip"]
       interval: 30s
       timeout: 10s
       retries: 3
