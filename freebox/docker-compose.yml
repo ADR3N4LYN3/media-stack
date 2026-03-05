@@ -17,8 +17,8 @@ services:
       - /opt/plex/transcode:/transcode
       - ${MEDIA_PATH}/films:/data/films:ro
       - ${MEDIA_PATH}/series:/data/series:ro
-    devices:
-      - /dev/dri:/dev/dri
+    # devices:
+    #   - /dev/dri:/dev/dri   # Décommenter si GPU passthrough disponible
     ulimits:
       nofile:
         soft: 65536
@@ -41,7 +41,7 @@ services:
       - USER_NAME=${SFTP_USER}
       - PUBLIC_KEY_FILE=/config/ssh/authorized_key
     ports:
-      - "${WG_FREEBOX_IP}:2222:2222"
+      - "2222:2222"
     volumes:
       - ./config/sftp:/config
       - ${MEDIA_PATH}:/data
