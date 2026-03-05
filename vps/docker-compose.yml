@@ -64,15 +64,12 @@ services:
   prowlarr:
     image: linuxserver/prowlarr:latest
     container_name: prowlarr
-    read_only: true
     environment:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
     volumes:
       - ./config/prowlarr:/config
-    tmpfs:
-      - /tmp
     ports:
       - "127.0.0.1:9696:9696"
     healthcheck:
@@ -93,7 +90,6 @@ services:
   sonarr:
     image: linuxserver/sonarr:latest
     container_name: sonarr
-    read_only: true
     environment:
       - PUID=${PUID}
       - PGID=${PGID}
@@ -102,8 +98,6 @@ services:
       - ./config/sonarr:/config
       - ${DOWNLOADS_PATH}/complete:/downloads/complete
       - ${MEDIA_PATH}/series:/tv
-    tmpfs:
-      - /tmp
     ports:
       - "127.0.0.1:8989:8989"
     depends_on:
@@ -121,7 +115,6 @@ services:
   radarr:
     image: linuxserver/radarr:latest
     container_name: radarr
-    read_only: true
     environment:
       - PUID=${PUID}
       - PGID=${PGID}
@@ -130,8 +123,6 @@ services:
       - ./config/radarr:/config
       - ${DOWNLOADS_PATH}/complete:/downloads/complete
       - ${MEDIA_PATH}/films:/movies
-    tmpfs:
-      - /tmp
     ports:
       - "127.0.0.1:7878:7878"
     depends_on:
@@ -149,15 +140,12 @@ services:
   overseerr:
     image: linuxserver/overseerr:latest
     container_name: overseerr
-    read_only: true
     environment:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
     volumes:
       - ./config/overseerr:/app/config
-    tmpfs:
-      - /tmp
     ports:
       - "127.0.0.1:5055:5055"
     security_opt:
@@ -172,7 +160,6 @@ services:
   homarr:
     image: ghcr.io/homarr-labs/homarr:latest
     container_name: homarr
-    read_only: true
     environment:
       - TZ=${TZ}
       - DEFAULT_COLOR_SCHEME=dark
@@ -180,8 +167,6 @@ services:
       - ./config/homarr/configs:/app/data/configs
       - ./config/homarr/icons:/app/public/icons
       - ./config/homarr/data:/data
-    tmpfs:
-      - /tmp
     ports:
       - "127.0.0.1:7575:7575"
     security_opt:
