@@ -289,6 +289,13 @@ chmod 640 "$HTPASSWD_FILE"
 chown root:www-data "$HTPASSWD_FILE"
 ok "Fichier htpasswd généré pour l'utilisateur ${NGINX_USER}"
 
+# Générer le htpasswd Homepage (creds séparés)
+HTPASSWD_HOMEPAGE="/etc/nginx/.htpasswd-homepage"
+htpasswd -bc "$HTPASSWD_HOMEPAGE" "${HOMEPAGE_USER}" "${HOMEPAGE_PASSWORD}" 2>/dev/null
+chmod 640 "$HTPASSWD_HOMEPAGE"
+chown root:www-data "$HTPASSWD_HOMEPAGE"
+ok "Fichier htpasswd Homepage généré pour l'utilisateur ${HOMEPAGE_USER}"
+
 # Générer la config nginx depuis le template
 NGINX_TEMPLATE="$PROJECT_DIR/nginx/media-stack.conf.template"
 NGINX_CONF="/etc/nginx/sites-available/media-stack"
