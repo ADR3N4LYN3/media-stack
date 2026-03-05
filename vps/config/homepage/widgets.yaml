@@ -6,7 +6,9 @@
 - resources:
     cpu: true
     memory: true
-    disk: /
+    disk:
+      - /
+      - /mnt/HC_Volume_104978745
 
 - datetime:
     text_size: xl
