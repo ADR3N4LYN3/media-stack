@@ -255,6 +255,27 @@ services:
     restart: unless-stopped
 
   # ──────────────────────────────────────────────
+  # Notifications Discord (Sonarr/Radarr/etc.)
+  # ──────────────────────────────────────────────
+  notifiarr:
+    image: golift/notifiarr:latest
+    container_name: notifiarr
+    hostname: notifiarr
+    environment:
+      - DN_API_KEY=${NOTIFIARR_API_KEY}
+      - TZ=${TZ}
+    volumes:
+      - ./config/notifiarr:/config
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "127.0.0.1:5454:5454"
+    security_opt:
+      - "no-new-privileges:true"
+    networks:
+      - media_network
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────
   # Mise à jour automatique des images Docker
   # ──────────────────────────────────────────────
   watchtower:
