@@ -23,7 +23,7 @@ vps/config/homarr/
 # qBittorrent : on versionne le .conf initial mais pas le reste du runtime
 vps/config/qbittorrent/*
 !vps/config/qbittorrent/qBittorrent.conf
-!vps/config/qbittorrent/custom-cont-init.d/
+!vps/config/qbittorrent/custom-services.d/
 
 # Freebox SFTP (contient cles SSH)
 freebox/config/sftp/

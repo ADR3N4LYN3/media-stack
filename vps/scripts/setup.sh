@@ -105,7 +105,7 @@ CONFIG_DIRS=(
     "radarr"
     "overseerr"
     "homepage"
-    "qbittorrent/custom-cont-init.d"
+    "qbittorrent/custom-services.d"
 )
 
 for dir in "${CONFIG_DIRS[@]}"; do
