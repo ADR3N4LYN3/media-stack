@@ -59,9 +59,9 @@ L'architecture repose sur deux noeuds physiques relies par un tunnel WireGuard c
     |                          [sftp] <--- port 2222         |
     |                            |                           |
     |                     NVMe interne                       |
-                    /data/media/                         |
-    |                   +-- films/                            |
-    |                   +-- series/                           |
+    |                    /data/media/                        |
+    |                   +-- films/                           |
+    |                   +-- series/                          |
     |                            |                           |
     |              [player freebox] ← lecture 4K direct play |
     ==========================================================
@@ -72,7 +72,7 @@ L'architecture repose sur deux noeuds physiques relies par un tunnel WireGuard c
 | Composant | Emplacement | Role |
 |---|---|---|
 | nginx | VPS (host) | Reverse proxy HTTPS, terminaison SSL Cloudflare |
-| Authelia | VPS | SSO — portail d'authentification unique (one_factor/two_factor) |
+| Authelia | VPS | SSO — portail d'authentification unique (two_factor TOTP) |
 | Overseerr | VPS | Interface de demande utilisateur (films/series) |
 | Sonarr | VPS | Gestion automatisee des series TV |
 | Radarr | VPS | Gestion automatisee des films |
@@ -190,7 +190,7 @@ Interface utilisateur pour les demandes de films et series.
 | Volumes | `./config/overseerr:/app/config` |
 | Security | `no-new-privileges:true` |
 
-Overseerr est protege par Authelia en one_factor (accessible aux amis/famille sans 2FA).
+Overseerr utilise son authentification interne (pas de SSO Authelia). Ce choix simplifie l'acces pour les amis et la famille qui n'ont pas besoin de 2FA.
 
 ### 7. Homepage
 
@@ -220,7 +220,7 @@ Portail d'authentification unique (SSO) pour tous les services.
 | Security | `no-new-privileges:true` |
 
 **Politique d'acces :**
-- Overseerr : `one_factor` (login simple, pour amis/famille)
+- Overseerr : **exclue d'Authelia** (utilise son auth interne, plus adapte aux utilisateurs non-techniques)
 - Services admin (Sonarr, Radarr, Prowlarr, qBittorrent, Homepage, Dozzle, Jackett) : `two_factor` (TOTP obligatoire)
 - Endpoints API Sonarr/Radarr (`/api`) : exclus de l'auth (communication inter-services via API key)
 
@@ -305,7 +305,7 @@ Visualiseur de logs Docker en temps reel via interface web.
 | Reseau | `media_network` |
 | Volumes | `/var/run/docker.sock:/var/run/docker.sock:ro` |
 
-### 13. Notifications Discord
+### Notifications Discord (pas un conteneur)
 
 Les notifications Discord sont gerees directement par les services via leurs connexions natives (pas de service intermediaire).
 
@@ -317,11 +317,11 @@ Les notifications Discord sont gerees directement par les services via leurs con
 
 **Fonctionnement :**
 - Sonarr et Radarr envoient les notifications directement via leurs connexions Discord natives (webhook par salon)
-- Chaque service a deux connexions : une pour les medias (Grab/Import) et une pour la sante (Health → #systeme)
+- Chaque service a deux connexions : une pour les medias (Grab/Import) et une pour la sante (Health -> #systeme)
 - Watchtower envoie ses notifications via Shoutrrr (webhook Discord dans `#systeme`)
 - Overseerr : notifications Discord desactivees (redondantes avec les Grab)
 
-### 14. Byparr
+### 13. Byparr
 
 Bypass Cloudflare pour les indexeurs Prowlarr (remplace FlareSolverr).
 
@@ -333,15 +333,18 @@ Bypass Cloudflare pour les indexeurs Prowlarr (remplace FlareSolverr).
 
 Utilise par Prowlarr comme proxy pour les indexeurs proteges par Cloudflare.
 
-### 15. Jackett
+### 14. Jackett
 
-Indexeur torrent supplementaire.
+Indexeur torrent supplementaire, utilise en complement de Prowlarr pour les sites proteges par Cloudflare.
+
+> **Pourquoi Jackett en plus de Prowlarr ?** Prowlarr a un bug architectural (#2572, #2360) : apres avoir resolu un challenge Cloudflare via FlareSolverr/Byparr, Prowlarr jette le body HTML et refait une requete avec ses propres headers, ce que Cloudflare detecte et bloque (403). Jackett n'a pas ce probleme car il utilise directement le HTML retourne par le solver. Jackett sert donc de fallback pour les indexeurs Cloudflare-protected.
 
 | Propriete | Valeur |
 |---|---|
 | Image | `linuxserver/jackett:latest` |
 | Ports | `127.0.0.1:9117:9117` |
 | Reseau | `media_network` |
+| Dependance | `byparr` |
 | Security | `no-new-privileges:true` |
 
 ---
@@ -439,7 +442,7 @@ Internet --> Cloudflare (proxy ON) --> VPS:443 --> nginx --> Authelia (auth_requ
 | Sous-domaine | Service | Port local | Authelia |
 |---|---|---|---|
 | `auth.DOMAIN` | Authelia | 9091 | — (portail lui-meme) |
-| `overseerr.DOMAIN` | Overseerr | 5055 | one_factor |
+| `overseerr.DOMAIN` | Overseerr | 5055 | — (auth interne) |
 | `sonarr.DOMAIN` | Sonarr | 8989 | two_factor (API exclue) |
 | `radarr.DOMAIN` | Radarr | 7878 | two_factor (API exclue) |
 | `prowlarr.DOMAIN` | Prowlarr | 9696 | two_factor |
@@ -505,7 +508,7 @@ Sonarr/Radarr          rclone                Player Freebox
 
 ### Detail de chaque etape
 
-**1. Demande** — L'utilisateur accede a Overseerr (`overseerr.DOMAIN`) via Authelia (one_factor) et demande un film ou une serie. Overseerr transmet la demande a Radarr (films) ou Sonarr (series).
+**1. Demande** — L'utilisateur accede a Overseerr (`overseerr.DOMAIN`) et s'authentifie via l'auth interne d'Overseerr. Il demande un film ou une serie. Overseerr transmet la demande a Radarr (films) ou Sonarr (series).
 
 **2. Recherche** — Sonarr ou Radarr interroge Prowlarr, qui agrege les resultats de multiples indexeurs torrent. Le meilleur torrent est selectionne selon les profils de qualite (ex: 4K FR, priorite aux Remux).
 
@@ -528,7 +531,7 @@ L'architecture applique une defense en profondeur avec plusieurs couches de prot
 ```
 Couche 1 : Cloudflare          IP VPS masquee, protection DDoS, proxy SSL
 Couche 2 : Nginx               HTTPS force, headers securite, auth_request → Authelia
-Couche 3 : Authelia SSO        Portail unique, one_factor ou two_factor selon service
+Couche 3 : Authelia SSO        Portail unique, two_factor (TOTP) sur les services admin
 Couche 4 : Fail2ban            Ban IP sur echecs SSH et auth
 Couche 5 : SSH durci           Port custom, password desactive, root desactive
 Couche 6 : VPN Mullvad         IP reelle jamais exposee pour les torrents
@@ -564,7 +567,7 @@ Tous les vhosts appliquent :
 
 ### Authentification
 
-- **Authelia SSO** : portail unique d'authentification. Overseerr en one_factor, tous les services admin en two_factor (TOTP). Les endpoints `/api` de Sonarr et Radarr sont exclus pour la communication inter-services (authentification par API key).
+- **Authelia SSO** : portail unique d'authentification. Tous les services admin en two_factor (TOTP). Overseerr utilise son auth interne (exclue d'Authelia). Les endpoints `/api` de Sonarr et Radarr sont exclus pour la communication inter-services (authentification par API key).
 - **SFTP** : cle publique SSH uniquement, mot de passe desactive, sudo desactive.
 - **SSH VPS** : port custom (`SSH_PORT`), authentification par mot de passe desactivee, login root desactive.
 

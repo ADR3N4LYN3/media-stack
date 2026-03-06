@@ -1,6 +1,8 @@
-# Troubleshooting — Bugs rencontrés et solutions
+# Troubleshooting — Bugs rencontres et solutions
 
-Historique des problèmes rencontrés lors du déploiement, avec diagnostic et solution.
+Historique des problemes rencontres lors du deploiement, avec diagnostic et solution.
+
+> **Voir aussi** : [OPS.md](OPS.md) pour les procedures de depannage generiques et les commandes de reference.
 
 ---
 
@@ -8,12 +10,12 @@ Historique des problèmes rencontrés lors du déploiement, avec diagnostic et s
 
 **Date** : 2026-03-05
 
-**Symptôme** :
+**Symptome** :
 ```
 CRITICAL: Failed to create file system for "freebox:/data": NewFs: couldn't connect SSH: ssh: handshake failed: knownhosts: key is unknown
 ```
 
-**Cause** : Le fichier `known_hosts` référencé dans `rclone.conf` était vide (0 bytes). Le `ssh-keyscan` avait été exécuté dans le mauvais répertoire (`~/bot/media-stack/vps/config/rclone/` au lieu de `./config/rclone/`).
+**Cause** : Le fichier `known_hosts` reference dans `rclone.conf` etait vide (0 bytes). Le `ssh-keyscan` avait ete execute dans le mauvais repertoire.
 
 **Solution** :
 ```bash
@@ -28,21 +30,21 @@ docker compose up -d --force-recreate rclone
 
 **Date** : 2026-03-05
 
-**Symptôme** :
+**Symptome** :
 ```
-ping 192.168.27.64 → 100% packet loss
-nc -zv 192.168.27.64 2222 → Connection timed out
+ping 192.168.27.64 -> 100% packet loss
+nc -zv 192.168.27.64 2222 -> Connection timed out
 ```
 
-**Cause** : `FREEBOX_WG_IP` dans `.env` pointait vers l'IP WireGuard du **routeur Freebox** (`192.168.27.64`), mais le conteneur SFTP tourne sur la **VM** (RustDesk) qui a une IP LAN différente (`192.168.1.250`). Le tunnel WireGuard route les paquets vers le routeur, pas vers la VM directement.
+**Cause** : `FREEBOX_WG_IP` dans `.env` pointait vers l'IP WireGuard du **routeur Freebox** (`192.168.27.64`), mais le conteneur SFTP tourne sur la **VM** qui a une IP LAN differente (`192.168.1.250`). Le tunnel WireGuard route les paquets vers le routeur, pas vers la VM directement.
 
 **Diagnostic** :
 ```bash
 # Sur la VM Freebox
-hostname -I  # → 192.168.1.250
+hostname -I  # -> 192.168.1.250
 
 # Depuis le VPS (via tunnel, allowed IPs inclut 192.168.1.0/24)
-nc -zv 192.168.1.250 2222  # → open
+nc -zv 192.168.1.250 2222  # -> open
 ```
 
 **Solution** :
@@ -50,7 +52,7 @@ nc -zv 192.168.1.250 2222  # → open
 # Corriger l'IP dans .env du VPS
 sed -i 's/FREEBOX_WG_IP=192.168.27.64/FREEBOX_WG_IP=192.168.1.250/' .env
 
-# Regénérer rclone.conf et known_hosts
+# Regenerer rclone.conf et known_hosts
 source .env
 sed -e "s|FREEBOX_WG_IP_PLACEHOLDER|${FREEBOX_WG_IP}|g" \
     -e "s|FREEBOX_SFTP_USER_PLACEHOLDER|${FREEBOX_SFTP_USER}|g" \
@@ -61,24 +63,26 @@ ssh-keyscan -p 2222 $FREEBOX_WG_IP > config/rclone/known_hosts
 docker compose up -d --force-recreate rclone
 ```
 
-**Prevention** : Le commentaire dans `.env.example` a été mis à jour pour préciser d'utiliser l'IP LAN de la VM et non l'IP WireGuard du routeur.
+**Prevention** : Le commentaire dans `.env.example` a ete mis a jour pour preciser d'utiliser l'IP LAN de la VM et non l'IP WireGuard du routeur.
 
 ---
 
-## 3. FlareSolverr/Byparr — "blocked by CloudFlare Protection" malgré challenge résolu
+## 3. Prowlarr — "blocked by CloudFlare Protection" malgre challenge resolu
 
-**Date** : 2026-03-05 (mis à jour 2026-03-06)
+**Date** : 2026-03-05 (mis a jour 2026-03-06)
 
-**Symptôme** : FlareSolverr résout les challenges Cloudflare (logs : "Challenge solved!", 200 OK) mais Prowlarr affiche toujours "Unable to access X, blocked by CloudFlare Protection" pour tous les indexeurs (1337x, Cpasbien, TorrentGalaxy, EZTV).
+**Symptome** : FlareSolverr resout les challenges Cloudflare (logs : "Challenge solved!", 200 OK) mais Prowlarr affiche toujours "Unable to access X, blocked by CloudFlare Protection" pour tous les indexeurs (1337x, Cpasbien, TorrentGalaxy, EZTV).
+
+Variante : FlareSolverr retourne 200 OK ("Challenge not detected!") mais Prowlarr bloque quand meme.
 
 **Cause** : Bug architectural de Prowlarr (issues #2572, #2360, #2577, FlareSolverr #1672) :
-1. Prowlarr envoie la requête à FlareSolverr
-2. FlareSolverr résout le challenge, retourne cookies `cf_clearance` + HTML
+1. Prowlarr envoie la requete a FlareSolverr
+2. FlareSolverr resout le challenge, retourne cookies `cf_clearance` + HTML
 3. **Prowlarr JETTE le body HTML**
-4. Prowlarr refait une 2ème requête HTTP avec les cookies mais ajoute ses propres headers (`Accept-Encoding: gzip`)
-5. Cloudflare détecte l'incohérence entre le cookie et les headers → 403
+4. Prowlarr refait une 2eme requete HTTP avec les cookies mais ajoute ses propres headers (`Accept-Encoding: gzip`)
+5. Cloudflare detecte l'incoherence entre le cookie et les headers -> 403
 
-Jackett n'a PAS ce problème car il utilise directement le HTML retourné.
+Jackett n'a PAS ce probleme car il utilise directement le HTML retourne. C'est pourquoi Jackett est maintenu dans la stack comme fallback pour les indexeurs proteges par Cloudflare.
 
 **Solution** : Remplacer FlareSolverr par **Byparr** (drop-in replacement utilisant Camoufox, Firefox-based) :
 ```yaml
@@ -88,45 +92,45 @@ byparr:
 ```
 Proxy Prowlarr : `http://byparr:8191` (communication interne Docker)
 
-**Note** : FlareSolverr reste en PM2 sur le host pour les autres bots qui l'utilisent. Byparr Docker est sur le port 8192 du host pour éviter le conflit.
+**Note** : FlareSolverr reste en PM2 sur le host pour les autres bots qui l'utilisent. Byparr Docker est sur le port 8192 du host pour eviter le conflit.
 
 ---
 
-## 4. Disque VPS à 100% — Migration vers Hetzner Volume
+## 4. Disque VPS a 100% — Migration vers Hetzner Volume
 
 **Date** : 2026-03-06
 
-**Symptôme** : Prowlarr disk I/O error, services instables, `/data` à 100%
+**Symptome** : Prowlarr disk I/O error, services instables, `/data` a 100%
 
-**Cause** : Le disque système de 78GB était plein (55GB de downloads).
+**Cause** : Le disque systeme de 78GB etait plein (55GB de downloads).
 
 **Solution** :
 - Ajout d'un Hetzner Volume de 250GB (XFS)
-- Volume monté automatiquement à `/mnt/HC_Volume_104978745`
-- Migration des données : `rsync -avP /data/ /mnt/HC_Volume_104978745/`
-- Mise à jour du `.env` :
+- Volume monte automatiquement au chemin configure dans `DATA_PATH`
+- Migration des donnees : `rsync -avP /data/ ${DATA_PATH}/`
+- Mise a jour du `.env` :
   ```
-  DATA_PATH=/mnt/HC_Volume_104978745
+  DATA_PATH=/chemin/vers/volume
   ```
 - Nettoyage de l'ancien `/data/` : `rm -rf /data/downloads/*`
-- Résultat : disque système de 100% → 24%
+- Resultat : disque systeme de 100% -> 24%
 
 ---
 
-## 5. Radarr — Import échoué (path not accessible)
+## 5. Radarr — Import echoue (path not accessible)
 
 **Date** : 2026-03-06
 
-**Symptôme** : `Import failed, path does not exist or is not accessible by Sonarr/Radarr`
+**Symptome** : `Import failed, path does not exist or is not accessible by Sonarr/Radarr`
 
-**Cause** : Les volumes Docker ne montaient que `${DOWNLOADS_PATH}/complete:/downloads/complete` mais les fichiers étaient dans `/downloads/incomplete` (en cours de téléchargement par qBittorrent).
+**Cause** : Les volumes Docker ne montaient que `${DOWNLOADS_PATH}/complete:/downloads/complete` mais les fichiers etaient dans `/downloads/incomplete` (en cours de telechargement par qBittorrent).
 
-**Solution** : Changer le volume mount pour monter le répertoire complet :
+**Solution** : Changer le volume mount pour monter le repertoire complet :
 ```yaml
 # Avant
 - ${DOWNLOADS_PATH}/complete:/downloads/complete
 
-# Après
+# Apres
 - ${DOWNLOADS_PATH}:/downloads
 ```
 
@@ -136,16 +140,16 @@ Proxy Prowlarr : `http://byparr:8191` (communication interne Docker)
 
 **Date** : 2026-03-06
 
-**Symptôme** : "Erreur API" sur le widget resources de Homepage pour le volume Hetzner
+**Symptome** : "Erreur API" sur le widget resources de Homepage pour le volume Hetzner
 
-**Cause** : Le conteneur Homepage n'avait pas accès au point de montage du volume.
+**Cause** : Le conteneur Homepage n'avait pas acces au point de montage du volume.
 
 **Solution** :
 1. Ajouter le volume mount dans docker-compose :
 ```yaml
-- /mnt/HC_Volume_104978745:/mnt/HC_Volume_104978745:ro
+- ${HETZNER_VOLUME_PATH}:${HETZNER_VOLUME_PATH}:ro
 ```
-2. Utiliser deux blocs `- resources:` séparés dans widgets.yaml (pas une liste) :
+2. Utiliser deux blocs `- resources:` separes dans widgets.yaml (pas une liste) :
 ```yaml
 - resources:
     cpu: true
@@ -157,45 +161,18 @@ Proxy Prowlarr : `http://byparr:8191` (communication interne Docker)
 
 ---
 
-## 7. FlareSolverr/Byparr — Prowlarr "blocked by CloudFlare" malgré 200 OK
+## 7. Hardlinks impossibles — Sonarr/Radarr copie au lieu de hardlinker
 
 **Date** : 2026-03-06
 
-**Symptôme** : FlareSolverr retourne 200 OK ("Challenge not detected!") mais Prowlarr affiche "Unable to access X, blocked by CloudFlare Protection"
+**Symptome** : Les fichiers dans `/media/` sont des copies (pas des hardlinks). Apres rclone move + seeding, l'espace disque est double. Les torrents finis restent "queued" dans Sonarr/Radarr.
 
-**Cause** : Bug architectural de Prowlarr (issues #2572, #2360, #2577, FlareSolverr #1672) :
-1. Prowlarr envoie la requête à FlareSolverr
-2. FlareSolverr résout le challenge, retourne cookies cf_clearance + HTML
-3. **Prowlarr JETTE le body HTML**
-4. Prowlarr refait une 2ème requête HTTP avec les cookies mais ajoute ses propres headers (Accept-Encoding: gzip)
-5. Cloudflare détecte l'incohérence entre le cookie et les headers → 403
-
-Jackett n'a PAS ce problème car il utilise directement le HTML retourné.
-
-**Solution** : Remplacer FlareSolverr par **Byparr** (drop-in replacement) :
-```yaml
-byparr:
-  image: ghcr.io/thephaseless/byparr:latest
-  container_name: byparr
-```
-Proxy Prowlarr : `http://byparr:8191`
-
-**Note** : FlareSolverr reste en PM2 sur le host pour les autres bots qui l'utilisent. Byparr Docker est sur le port 8192 du host pour éviter le conflit.
-
----
-
-## 8. Hardlinks impossibles — Sonarr/Radarr copie au lieu de hardlinker
-
-**Date** : 2026-03-06
-
-**Symptôme** : Les fichiers dans `/media/` sont des copies (pas des hardlinks). Après rclone move + seeding, l'espace disque est doublé. Les torrents finis restent "queued" dans Sonarr/Radarr.
-
-**Cause** : Sonarr/Radarr montaient `${DOWNLOADS_PATH}:/downloads` et `${MEDIA_PATH}:/tv` (ou `/movies`) comme des volumes **séparés**. Docker voit deux montages distincts → hardlink impossible → copie automatique.
+**Cause** : Sonarr/Radarr montaient `${DOWNLOADS_PATH}:/downloads` et `${MEDIA_PATH}:/tv` (ou `/movies`) comme des volumes **separes**. Docker voit deux montages distincts -> hardlink impossible -> copie automatique.
 
 **Diagnostic** :
 ```bash
-# Vérifier le nombre de liens d'un fichier (1 = copie, 2+ = hardlink)
-stat /mnt/HC_Volume_104978745/media/films/*/* | grep Links
+# Verifier le nombre de liens d'un fichier (1 = copie, 2+ = hardlink)
+stat ${DATA_PATH}/media/films/*/* | grep Links
 ```
 
 **Solution** : Monter un **volume unique** `/data` dans qBittorrent, Sonarr et Radarr :
@@ -205,29 +182,31 @@ volumes:
   - ${DOWNLOADS_PATH}:/downloads
   - ${MEDIA_PATH}/series:/tv
 
-# APRÈS (hardlinks fonctionnent)
+# APRES (hardlinks fonctionnent)
 volumes:
   - ${DATA_PATH}:/data
 ```
 
 `.env` :
 ```
-DATA_PATH=/mnt/HC_Volume_104978745
+DATA_PATH=/chemin/vers/volume
 ```
 
 **Reconfiguration requise dans les WebUI** :
-- **qBittorrent** : Default Save Path → `/data/downloads/complete`, Incomplete → `/data/downloads/incomplete`
-- **Sonarr** : Root Folder → `/data/media/series` (supprimer l'ancien `/tv`)
-- **Radarr** : Root Folder → `/data/media/films` (supprimer l'ancien `/movies`)
-- **Sonarr/Radarr** : Download Client > qBittorrent > **Remove Completed** ✅
-- **Séries/films existants** : Mass Editor > Select All > Change Root Folder vers le nouveau chemin
-- **Overseerr** : Settings > Services > Radarr/Sonarr > Sélectionner le nouveau dossier racine
-- **Radarr** : Settings > Media Management > **Unmonitor Deleted Movies** ✅ (évite re-download après rclone move)
-- **qBittorrent** : Settings > BitTorrent > When ratio reaches `1.0` / seeding time `1440` min → Stop torrent
+- **qBittorrent** : Default Save Path -> `/data/downloads/complete`, Incomplete -> `/data/downloads/incomplete`
+- **Sonarr** : Root Folder -> `/data/media/series` (supprimer l'ancien `/tv`)
+- **Radarr** : Root Folder -> `/data/media/films` (supprimer l'ancien `/movies`)
+- **Sonarr/Radarr** : Download Client > qBittorrent > **Remove Completed** actif
+- **Series/films existants** : Mass Editor > Select All > Change Root Folder vers le nouveau chemin
+- **Overseerr** : Settings > Services > Radarr/Sonarr > Selectionner le nouveau dossier racine
+- **Radarr** : Settings > Media Management > **Unmonitor Deleted Movies** actif (evite re-download apres rclone move)
+- **qBittorrent** : Settings > BitTorrent > When ratio reaches `1.0` / seeding time `1440` min -> Stop torrent
 
 ---
 
-## Réseau — Rappel des IPs
+## Reseau — Rappel des IPs
+
+> **Note** : Ces IPs sont specifiques a l'environnement de deploiement actuel. Adaptez-les a votre configuration.
 
 | Ressource | IP | Port |
 |---|---|---|
@@ -236,5 +215,4 @@ DATA_PATH=/mnt/HC_Volume_104978745
 | Gateway Docker `vps_media_network` | 172.20.0.1 | — |
 | Gateway Docker `bridge` (docker0) | 172.17.0.1 | — |
 | FlareSolverr (PM2, pour autres bots) | localhost | 8191 |
-| Byparr (Docker, pour Prowlarr) | byparr (réseau Docker) | 8191 (host: 8192) |
-| Hetzner Volume | /mnt/HC_Volume_104978745 | — |
+| Byparr (Docker, pour Prowlarr) | byparr (reseau Docker) | 8191 (host: 8192) |
