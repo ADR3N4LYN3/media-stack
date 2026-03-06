@@ -19,7 +19,7 @@ Documentation detaillee de l'architecture du projet media-stack : infrastructure
 
 L'architecture repose sur deux noeuds physiques relies par un tunnel WireGuard chiffre :
 
-- **VPS Hetzner AX22** (Helsinki) : telechargement automatise derriere VPN Mullvad, gestion des medias, reverse proxy HTTPS. Stockage sur Hetzner Volume 250GB monte a `/mnt/HC_Volume_104978745` (`DOWNLOADS_PATH=/mnt/HC_Volume_104978745/downloads`, `MEDIA_PATH=/mnt/HC_Volume_104978745/media`)
+- **VPS Hetzner AX22** (Helsinki) : telechargement automatise derriere VPN Mullvad, gestion des medias, reverse proxy HTTPS. Stockage sur Hetzner Volume 250GB monte a `/mnt/HC_Volume_104978745` (`DATA_PATH=/mnt/HC_Volume_104978745`, contient `downloads/` et `media/` sur le meme filesystem pour les hardlinks)
 - **Freebox Ultra** (domicile) : stockage NVMe interne, lecture Plex 4K direct play
 
 ```
@@ -127,7 +127,7 @@ Client torrent, isole derriere le VPN Gluetun.
 | Ports | Aucun (passe via Gluetun) |
 | Reseau | `network_mode: service:gluetun` |
 | Dependance | `gluetun` (condition: `service_healthy`) |
-| Volumes | `./config/qbittorrent:/config`, `${DOWNLOADS_PATH}:/downloads` |
+| Volumes | `./config/qbittorrent:/config`, `${DATA_PATH}:/data` |
 | Security | `no-new-privileges:true` |
 
 **Configuration qBittorrent** (`vps/config/qbittorrent/qBittorrent.conf`) :
@@ -162,7 +162,7 @@ Gestion automatisee des series TV.
 | Image | `linuxserver/sonarr:latest` |
 | Ports | `127.0.0.1:8989:8989` |
 | Reseau | `media_network` |
-| Volumes | `./config/sonarr:/config`, `${DOWNLOADS_PATH}:/downloads`, `${MEDIA_PATH}/series:/tv` |
+| Volumes | `./config/sonarr:/config`, `${DATA_PATH}:/data` |
 | Dependance | `prowlarr` (condition: `service_healthy`) |
 | Security | `no-new-privileges:true` |
 
@@ -175,7 +175,7 @@ Gestion automatisee des films.
 | Image | `linuxserver/radarr:latest` |
 | Ports | `127.0.0.1:7878:7878` |
 | Reseau | `media_network` |
-| Volumes | `./config/radarr:/config`, `${DOWNLOADS_PATH}:/downloads`, `${MEDIA_PATH}/films:/movies` |
+| Volumes | `./config/radarr:/config`, `${DATA_PATH}:/data` |
 | Dependance | `prowlarr` (condition: `service_healthy`) |
 | Security | `no-new-privileges:true` |
 
@@ -217,7 +217,7 @@ Synchronisation automatique des medias du VPS vers la Freebox via SFTP sur tunne
 | Ports | Aucun |
 | Reseau | `network_mode: host` |
 | Entrypoint | `/bin/sh -c` (boucle infinie) |
-| Volumes | `${MEDIA_PATH}:/source:ro`, `./config/rclone:/config/rclone:ro`, `./config/rclone/id_rsa:/root/.ssh/id_rsa:ro` |
+| Volumes | `${DATA_PATH}/media:/source`, `./config/rclone:/config/rclone:ro`, `./config/rclone/id_rsa:/root/.ssh/id_rsa:ro` |
 | Dependances | `sonarr`, `radarr` |
 | Security | `no-new-privileges:true` |
 
@@ -486,7 +486,7 @@ Sonarr/Radarr          rclone                Plex
 
 **3. Telechargement** — Sonarr/Radarr envoie le torrent a qBittorrent (accessible via `gluetun:8080` sur le reseau Docker). qBittorrent telecharge derriere le VPN Mullvad. Les fichiers transitent par `/downloads/incomplete` puis `/downloads/complete`.
 
-**4. Import** — Sonarr/Radarr detecte la fin du telechargement, renomme le fichier selon les conventions, et le deplace (hardlink ou copie) vers `/mnt/HC_Volume_104978745/media/films/` ou `/mnt/HC_Volume_104978745/media/series/`.
+**4. Import** — Sonarr/Radarr detecte la fin du telechargement, renomme le fichier selon les conventions, et cree un **hardlink** vers `/data/media/films/` ou `/data/media/series/` (meme filesystem = meme inode, zero espace supplementaire). Le fichier original reste dans `/data/downloads/` pour le seeding.
 
 **5. Synchronisation** — Le conteneur rclone, en boucle toutes les minutes, deplace (`rclone move`) les films et series separement vers la Freebox via SFTP sur le tunnel WireGuard. Les fichiers partiels (`*.part`, `*.!qB`) sont exclus. Les repertoires source vides sont supprimes (`--delete-empty-src-dirs`).
 

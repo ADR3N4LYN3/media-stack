@@ -106,8 +106,7 @@ Proxy Prowlarr : `http://byparr:8191` (communication interne Docker)
 - Migration des données : `rsync -avP /data/ /mnt/HC_Volume_104978745/`
 - Mise à jour du `.env` :
   ```
-  DOWNLOADS_PATH=/mnt/HC_Volume_104978745/downloads
-  MEDIA_PATH=/mnt/HC_Volume_104978745/media
+  DATA_PATH=/mnt/HC_Volume_104978745
   ```
 - Nettoyage de l'ancien `/data/` : `rm -rf /data/downloads/*`
 - Résultat : disque système de 100% → 24%
@@ -182,6 +181,45 @@ byparr:
 Proxy Prowlarr : `http://byparr:8191`
 
 **Note** : FlareSolverr reste en PM2 sur le host pour les autres bots qui l'utilisent. Byparr Docker est sur le port 8192 du host pour éviter le conflit.
+
+---
+
+## 8. Hardlinks impossibles — Sonarr/Radarr copie au lieu de hardlinker
+
+**Date** : 2026-03-06
+
+**Symptôme** : Les fichiers dans `/media/` sont des copies (pas des hardlinks). Après rclone move + seeding, l'espace disque est doublé. Les torrents finis restent "queued" dans Sonarr/Radarr.
+
+**Cause** : Sonarr/Radarr montaient `${DOWNLOADS_PATH}:/downloads` et `${MEDIA_PATH}:/tv` (ou `/movies`) comme des volumes **séparés**. Docker voit deux montages distincts → hardlink impossible → copie automatique.
+
+**Diagnostic** :
+```bash
+# Vérifier le nombre de liens d'un fichier (1 = copie, 2+ = hardlink)
+stat /mnt/HC_Volume_104978745/media/films/*/* | grep Links
+```
+
+**Solution** : Monter un **volume unique** `/data` dans qBittorrent, Sonarr et Radarr :
+```yaml
+# docker-compose.yml — AVANT (hardlinks impossibles)
+volumes:
+  - ${DOWNLOADS_PATH}:/downloads
+  - ${MEDIA_PATH}/series:/tv
+
+# APRÈS (hardlinks fonctionnent)
+volumes:
+  - ${DATA_PATH}:/data
+```
+
+`.env` :
+```
+DATA_PATH=/mnt/HC_Volume_104978745
+```
+
+**Reconfiguration requise dans les WebUI** :
+- **qBittorrent** : Save path → `/data/downloads/incomplete/{category}`
+- **Sonarr** : Root Folder → `/data/media/series`
+- **Radarr** : Root Folder → `/data/media/films`
+- **Sonarr/Radarr** : Download Client > qBittorrent > **Remove Completed** ✅
 
 ---
 

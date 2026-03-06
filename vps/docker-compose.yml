@@ -59,7 +59,7 @@ services:
     volumes:
       - ./config/qbittorrent:/config
       - ./config/qbittorrent/custom-services.d:/custom-services.d:ro
-      - ${DOWNLOADS_PATH}:/downloads
+      - ${DATA_PATH}:/data
     security_opt:
       - "no-new-privileges:true"
     restart: unless-stopped
@@ -102,8 +102,7 @@ services:
       - TZ=${TZ}
     volumes:
       - ./config/sonarr:/config
-      - ${DOWNLOADS_PATH}:/downloads
-      - ${MEDIA_PATH}/series:/tv
+      - ${DATA_PATH}:/data
     ports:
       - "127.0.0.1:8989:8989"
     depends_on:
@@ -127,8 +126,7 @@ services:
       - TZ=${TZ}
     volumes:
       - ./config/radarr:/config
-      - ${DOWNLOADS_PATH}:/downloads
-      - ${MEDIA_PATH}/films:/movies
+      - ${DATA_PATH}:/data
     ports:
       - "127.0.0.1:7878:7878"
     depends_on:
@@ -205,7 +203,7 @@ services:
           sleep 60
         done
     volumes:
-      - ${MEDIA_PATH}:/source
+      - ${DATA_PATH}/media:/source
       - ./config/rclone:/config/rclone:ro
       - ./config/rclone/id_rsa:/root/.ssh/id_rsa:ro
     depends_on:

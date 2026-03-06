@@ -259,12 +259,13 @@ Voici chaque variable avec son explication detaillee :
 | `PGID` | ID groupe Linux | `1000` |
 | `TZ` | Fuseau horaire | `Europe/Paris` |
 
-#### Chemins sur le VPS
+#### Chemin racine du stockage
 
 | Variable | Description | Valeur par defaut |
 |---|---|---|
-| `DOWNLOADS_PATH` | Repertoire de telechargement (Hetzner Volume) | `/mnt/HC_Volume_104978745/downloads` |
-| `MEDIA_PATH` | Repertoire des medias tries (Hetzner Volume) | `/mnt/HC_Volume_104978745/media` |
+| `DATA_PATH` | Racine du volume Hetzner (contient `downloads/` et `media/`) | `/mnt/HC_Volume_104978745` |
+
+> **Important** : `downloads/` et `media/` doivent etre sur le **meme filesystem** pour que les hardlinks fonctionnent (Sonarr/Radarr cree un hardlink au lieu de copier, economisant 100% d'espace disque pendant le seeding).
 
 #### VPN Mullvad WireGuard (pour les torrents)
 
@@ -343,8 +344,7 @@ PUID=1000
 PGID=1000
 TZ=Europe/Paris
 
-DOWNLOADS_PATH=/mnt/HC_Volume_104978745/downloads
-MEDIA_PATH=/mnt/HC_Volume_104978745/media
+DATA_PATH=/mnt/HC_Volume_104978745
 
 WIREGUARD_PRIVATE_KEY=maClePriveeMullvadIciEnBase64=
 WIREGUARD_ADDRESSES=10.66.123.45/32
@@ -635,7 +635,7 @@ Acceder a `https://radarr.DOMAIN`.
 **Configurer le chemin racine (Root Folder)** :
 
 1. **Settings** > **Media Management**
-2. Ajouter un Root Folder : `/movies`
+2. Ajouter un Root Folder : `/data/media/films`
 
 ### 4.3 Sonarr - Gestion des series
 
@@ -646,7 +646,7 @@ La configuration est identique a Radarr :
 1. **Verifier les indexeurs** : s'ils sont synchronises via Prowlarr, ils apparaissent automatiquement
 2. **Ajouter qBittorrent** : meme configuration que Radarr (host: `gluetun`, port: `8080`)
 3. **Creer un profil de qualite** similaire a celui de Radarr
-4. **Root Folder** : `/tv`
+4. **Root Folder** : `/data/media/series`
 
 ### 4.4 Overseerr - Interface de demande
 
@@ -674,9 +674,9 @@ Acceder a `https://overseerr.DOMAIN`.
 | Port | `7878` |
 | API Key | Copier depuis Radarr > Settings > General |
 | Quality Profile | Selectionner le profil `4K FR` |
-| Root Folder | `/movies` |
+| Root Folder | `/data/media/films` |
 
-3. **Connecter Sonarr** : meme procedure avec le port `8989` et le Root Folder `/tv`
+3. **Connecter Sonarr** : meme procedure avec le port `8989` et le Root Folder `/data/media/series`
 
 4. **Configurer les utilisateurs** : dans **Settings** > **Users**, definir les permissions pour les utilisateurs qui pourront faire des demandes
 
