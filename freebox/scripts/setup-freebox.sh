@@ -50,12 +50,17 @@ info "Création des répertoires..."
 PUID="${PUID:-1000}"
 PGID="${PGID:-1000}"
 
-mkdir -p /mnt/NVMe/media/films
-mkdir -p /mnt/NVMe/media/series
+# Lire MEDIA_PATH depuis .env si disponible
+if [ -f "$PROJECT_DIR/.env" ]; then
+    MEDIA_PATH="$(grep -E '^MEDIA_PATH=' "$PROJECT_DIR/.env" | cut -d'=' -f2- | xargs)"
+fi
+MEDIA_PATH="${MEDIA_PATH:-/mnt/NVMe/media}"
 
-chown -R "${PUID}:${PGID}" /mnt/NVMe/media
+mkdir -p "$MEDIA_PATH"
 
-ok "Répertoires créés avec permissions ${PUID}:${PGID}"
+chown -R "${PUID}:${PGID}" "$MEDIA_PATH"
+
+ok "Répertoire $MEDIA_PATH créé avec permissions ${PUID}:${PGID}"
 
 # ── 3. Configuration SFTP (conteneur openssh-server) ──
 
