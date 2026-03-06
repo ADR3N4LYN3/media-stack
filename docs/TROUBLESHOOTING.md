@@ -216,10 +216,14 @@ DATA_PATH=/mnt/HC_Volume_104978745
 ```
 
 **Reconfiguration requise dans les WebUI** :
-- **qBittorrent** : Save path → `/data/downloads/incomplete/{category}`
-- **Sonarr** : Root Folder → `/data/media/series`
-- **Radarr** : Root Folder → `/data/media/films`
+- **qBittorrent** : Default Save Path → `/data/downloads/complete`, Incomplete → `/data/downloads/incomplete`
+- **Sonarr** : Root Folder → `/data/media/series` (supprimer l'ancien `/tv`)
+- **Radarr** : Root Folder → `/data/media/films` (supprimer l'ancien `/movies`)
 - **Sonarr/Radarr** : Download Client > qBittorrent > **Remove Completed** ✅
+- **Séries/films existants** : Mass Editor > Select All > Change Root Folder vers le nouveau chemin
+- **Overseerr** : Settings > Services > Radarr/Sonarr > Sélectionner le nouveau dossier racine
+- **Radarr** : Settings > Media Management > **Unmonitor Deleted Movies** ✅ (évite re-download après rclone move)
+- **qBittorrent** : Settings > BitTorrent > When ratio reaches `1.0` / seeding time `1440` min → Stop torrent
 
 ---
 
