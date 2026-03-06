@@ -278,13 +278,12 @@ services:
   # ──────────────────────────────────────────────
   # Bypass Cloudflare pour indexeurs (Prowlarr)
   # ──────────────────────────────────────────────
-  flaresolverr:
-    image: 21hsmw/flaresolverr:nodriver
-    container_name: flaresolverr
+  byparr:
+    image: ghcr.io/thephaseless/byparr:latest
+    container_name: byparr
     environment:
       - TZ=${TZ}
       - LOG_LEVEL=info
-      - DRIVER=nodriver
     ports:
       - "127.0.0.1:8192:8191"
     security_opt:
