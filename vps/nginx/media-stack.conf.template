@@ -36,7 +36,7 @@ server {
     }
 }
 
-# ── Overseerr (auth Authelia one_factor — accessible aux amis) ──
+# ── Overseerr (pas d'Authelia — auth interne Overseerr) ──
 server {
     listen 80;
     server_name overseerr.DOMAIN_PLACEHOLDER;
@@ -58,10 +58,7 @@ server {
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 
-    include /etc/nginx/snippets/authelia-location.conf;
-
     location / {
-        include /etc/nginx/snippets/authelia-authrequest.conf;
         proxy_pass http://127.0.0.1:5055;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
