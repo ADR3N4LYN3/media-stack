@@ -8,7 +8,7 @@
     memory: true
     disk: /
 - resources:
-    disk: /mnt/HC_Volume_104978745
+    disk: {{HOMEPAGE_VAR_HETZNER_VOLUME_PATH}}
 
 - datetime:
     text_size: xl

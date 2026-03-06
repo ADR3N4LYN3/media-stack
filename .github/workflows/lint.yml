@@ -1,0 +1,37 @@
+name: Lint
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "vps/**"
+      - "freebox/**"
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate-compose:
+    name: Validate Docker Compose
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create dummy .env for validation
+        run: |
+          cd vps
+          sed 's/=CHANGE_ME$/=dummy/g; s/=\/mnt\/HC_Volume_CHANGE_ME$/=\/mnt\/dummy/g' .env.example > .env
+
+      - name: Validate VPS docker-compose.yml
+        run: docker compose -f vps/docker-compose.yml config --quiet
+
+  yaml-lint:
+    name: YAML Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install yamllint
+        run: pip install yamllint
+
+      - name: Lint YAML files
+        run: yamllint -d relaxed vps/docker-compose.yml
