@@ -328,6 +328,7 @@ NGINX_CONF="/etc/nginx/sites-available/media-stack"
 
 if [ -f "$NGINX_TEMPLATE" ]; then
     sed "s|DOMAIN_PLACEHOLDER|${DOMAIN}|g" "$NGINX_TEMPLATE" > "$NGINX_CONF"
+    rm -f /etc/nginx/sites-enabled/default
     ln -sf "$NGINX_CONF" /etc/nginx/sites-enabled/media-stack
     ok "Config nginx générée pour *.${DOMAIN}"
 else
