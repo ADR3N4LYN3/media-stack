@@ -23,6 +23,7 @@ vps/config/homepage/
 vps/config/jackett/
 vps/config/authelia/db.sqlite3
 vps/config/authelia/notification.txt
+vps/config/authelia/configuration.yml
 # qBittorrent : on versionne le .conf initial mais pas le reste du runtime
 vps/config/qbittorrent/*
 !vps/config/qbittorrent/qBittorrent.conf

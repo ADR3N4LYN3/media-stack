@@ -262,6 +262,17 @@ echo ""
 
 info "Configuration Authelia..."
 
+# Générer configuration.yml depuis le template
+AUTHELIA_CONF="$PROJECT_DIR/config/authelia/configuration.yml"
+AUTHELIA_CONF_TEMPLATE="$PROJECT_DIR/config/authelia/configuration.yml.template"
+
+if [ -f "$AUTHELIA_CONF_TEMPLATE" ]; then
+    sed "s|DOMAIN_PLACEHOLDER|${DOMAIN}|g" "$AUTHELIA_CONF_TEMPLATE" > "$AUTHELIA_CONF"
+    ok "configuration.yml généré pour ${DOMAIN}"
+else
+    die "Template Authelia introuvable : $AUTHELIA_CONF_TEMPLATE"
+fi
+
 # Générer le hash du mot de passe Authelia
 AUTHELIA_USERS_DB="$PROJECT_DIR/config/authelia/users_database.yml"
 AUTHELIA_USERS_TEMPLATE="$PROJECT_DIR/config/authelia/users_database.yml"
