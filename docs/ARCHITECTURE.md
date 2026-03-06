@@ -309,7 +309,7 @@ Visualiseur de logs Docker en temps reel via interface web.
 
 ### 13. Notifiarr
 
-Notifications Discord pour les evenements Sonarr et Radarr.
+Notifications Discord pour les evenements Sonarr et Radarr via le bot Notifiarr.
 
 | Propriete | Valeur |
 |---|---|
@@ -318,6 +318,20 @@ Notifications Discord pour les evenements Sonarr et Radarr.
 | Reseau | `media_network` |
 | Volumes | `./config/notifiarr:/config`, `/var/run/docker.sock:/var/run/docker.sock:ro` |
 | Env | `DN_API_KEY=${NOTIFIARR_API_KEY}` |
+
+**Architecture des notifications Discord (Option B - par type de media) :**
+
+| Salon Discord | Source | Evenements |
+|---|---|---|
+| `#films` | Radarr via Notifiarr | Grab, Imported, Upgrade |
+| `#series` | Sonarr via Notifiarr | Grab, Imported, Upgrade |
+| `#systeme` | Notifiarr + Watchtower | Health issues, mises a jour containers |
+
+**Fonctionnement :**
+- Sonarr/Radarr envoient les webhooks a `http://notifiarr:5454/api/v1/notification/{sonarr,radarr}`
+- Notifiarr route vers les salons Discord via son bot (pas de webhook Discord necessaire)
+- Watchtower envoie ses notifications via Shoutrrr (webhook Discord dans `#systeme`)
+- Overseerr : notifications Discord desactivees (redondantes avec les Grab Notifiarr)
 
 ### 14. Byparr
 
