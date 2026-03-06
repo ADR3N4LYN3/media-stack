@@ -188,7 +188,6 @@ docker compose ps --format "table {{.Name}}\t{{.Status}}" | grep -i restarting
 | rclone | - | Non |
 | fail2ban | host | Non |
 | dozzle | 9999 | Non |
-| notifiarr | 5454 | Non |
 | byparr | 8192 | Non |
 | watchtower | - | Non |
 
@@ -797,7 +796,6 @@ grep "webhook\|FAILED" /var/log/rclone-sync.log
 | Config Overseerr | `vps/config/overseerr/` | Utilisateurs, demandes |
 | Config qBittorrent | `vps/config/qbittorrent/` | Torrents actifs, preferences |
 | Config Homepage | `vps/config/homepage/` | Dashboard personnalise |
-| Config Notifiarr | `vps/config/notifiarr/` | Notifications et integrations |
 | Config Authelia | `vps/config/authelia/` | SSO, base utilisateurs, sessions |
 | Certificats SSL | `/etc/ssl/cloudflare/` | Certificats origin Cloudflare |
 
@@ -837,7 +835,6 @@ tar czf "$BACKUP_FILE" \
     home/adr3bot/bot/media-stack/vps/config/overseerr/ \
     home/adr3bot/bot/media-stack/vps/config/qbittorrent/ \
     home/adr3bot/bot/media-stack/vps/config/homepage/ \
-    home/adr3bot/bot/media-stack/vps/config/notifiarr/ \
     home/adr3bot/bot/media-stack/vps/config/authelia/ \
     etc/wireguard/wg-freebox.conf \
     etc/ssl/cloudflare/ \

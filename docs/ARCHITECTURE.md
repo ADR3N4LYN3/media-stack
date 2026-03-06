@@ -39,7 +39,6 @@ L'architecture repose sur deux noeuds physiques relies par un tunnel WireGuard c
     |            /     |    |    |     \                      |
     |     overseerr sonarr radarr prowlarr homepage           |
     |         |        |    |       |    dozzle              |
-    |         |        |    |       |    notifiarr            |
     |         |        |    |       |    byparr               |
     |         |        |    |       |    jackett              |
     |         +--------+----+-------+                        |
@@ -84,7 +83,6 @@ L'architecture repose sur deux noeuds physiques relies par un tunnel WireGuard c
 | Fail2ban | VPS | Protection brute-force SSH et auth nginx |
 | Homepage | VPS | Dashboard de monitoring centralise (widgets YAML) |
 | Dozzle | VPS | Visualiseur de logs Docker web |
-| Notifiarr | VPS | Notifications Discord (Sonarr/Radarr) |
 | Byparr | VPS | Bypass Cloudflare pour Prowlarr (remplace FlareSolverr) |
 | Jackett | VPS | Indexeur torrent supplementaire |
 | Watchtower | VPS | Mise a jour automatique des images Docker |
@@ -94,7 +92,7 @@ L'architecture repose sur deux noeuds physiques relies par un tunnel WireGuard c
 
 ## Services Docker VPS
 
-Le VPS execute 15 conteneurs Docker definis dans `vps/docker-compose.yml`. Tous partagent le reseau `media_network` (sauf exceptions notees).
+Le VPS execute 14 conteneurs Docker definis dans `vps/docker-compose.yml`. Tous partagent le reseau `media_network` (sauf exceptions notees).
 
 ### 1. Gluetun
 
@@ -307,31 +305,21 @@ Visualiseur de logs Docker en temps reel via interface web.
 | Reseau | `media_network` |
 | Volumes | `/var/run/docker.sock:/var/run/docker.sock:ro` |
 
-### 13. Notifiarr
+### 13. Notifications Discord
 
-Notifications Discord pour les evenements Sonarr et Radarr via le bot Notifiarr.
-
-| Propriete | Valeur |
-|---|---|
-| Image | `golift/notifiarr:latest` |
-| Ports | `127.0.0.1:5454:5454` |
-| Reseau | `media_network` |
-| Volumes | `./config/notifiarr:/config`, `/var/run/docker.sock:/var/run/docker.sock:ro` |
-| Env | `DN_API_KEY=${NOTIFIARR_API_KEY}` |
-
-**Architecture des notifications Discord (Option B - par type de media) :**
+Les notifications Discord sont gerees directement par les services via leurs connexions natives (pas de service intermediaire).
 
 | Salon Discord | Source | Evenements |
 |---|---|---|
-| `#films` | Radarr via Notifiarr | Grab, Imported, Upgrade |
-| `#series` | Sonarr via Notifiarr | Grab, Imported, Upgrade |
-| `#systeme` | Notifiarr + Watchtower | Health issues, mises a jour containers |
+| `#films` | Radarr (webhook Discord natif) | Grab, Import, Upgrade, Manual Interaction |
+| `#series` | Sonarr (webhook Discord natif) | Grab, Import, Upgrade, Manual Interaction |
+| `#systeme` | Sonarr Health + Radarr Health + Watchtower | Health issues, mises a jour containers |
 
 **Fonctionnement :**
-- Sonarr/Radarr envoient les webhooks a `http://notifiarr:5454/api/v1/notification/{sonarr,radarr}`
-- Notifiarr route vers les salons Discord via son bot (pas de webhook Discord necessaire)
+- Sonarr et Radarr envoient les notifications directement via leurs connexions Discord natives (webhook par salon)
+- Chaque service a deux connexions : une pour les medias (Grab/Import) et une pour la sante (Health → #systeme)
 - Watchtower envoie ses notifications via Shoutrrr (webhook Discord dans `#systeme`)
-- Overseerr : notifications Discord desactivees (redondantes avec les Grab Notifiarr)
+- Overseerr : notifications Discord desactivees (redondantes avec les Grab)
 
 ### 14. Byparr
 
@@ -398,7 +386,6 @@ Conteneurs connectes :
   +-- homepage
   +-- authelia
   +-- dozzle
-  +-- notifiarr
   +-- byparr
   +-- jackett
   +-- watchtower

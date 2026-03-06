@@ -322,7 +322,6 @@ Ces valeurs viennent du **fichier .conf telecharge a l'etape 2.2** :
 |---|---|---|
 | `DISCORD_WATCHTOWER_WEBHOOK_ID` | ID webhook Discord salon #systeme (Watchtower) | Partie ID de l'URL webhook Discord |
 | `DISCORD_WATCHTOWER_WEBHOOK_TOKEN` | Token webhook Discord salon #systeme (Watchtower) | Partie token de l'URL webhook Discord |
-| `NOTIFIARR_API_KEY` | Cle API Notifiarr pour les notifications | Copier depuis notifiarr.com |
 
 #### SSH et divers
 
@@ -370,7 +369,6 @@ HOMEPAGE_OVERSEERR_KEY=votreCleApiOverseerr
 
 DISCORD_WATCHTOWER_WEBHOOK_ID=123456789
 DISCORD_WATCHTOWER_WEBHOOK_TOKEN=votreTokenWebhook
-NOTIFIARR_API_KEY=votreCleApiNotifiarr
 
 SSH_PORT=2222
 PORT_QBITTORRENT=8080
@@ -530,7 +528,6 @@ Dans la console Hetzner Cloud, configurer le firewall avec ces regles :
 | **Overseerr** | 5055 | Interface de demande utilisateur |
 | **Homepage** | 3000 | Dashboard de monitoring |
 | **Dozzle** | 9999 | Visualiseur de logs Docker |
-| **Notifiarr** | 5454 | Notifications Discord via bot (#films, #series, #systeme) |
 | **Byparr** | 8192 | Bypass Cloudflare pour indexeurs Prowlarr |
 | **rclone** | - | Synchronisation VPS vers Freebox (toutes les minutes) |
 | **Fail2ban** | - | Protection brute-force SSH et nginx |
