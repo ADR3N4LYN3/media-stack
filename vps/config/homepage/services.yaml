@@ -1,11 +1,11 @@
 - Media:
-    - Overseerr:
+    - Seerr:
         icon: overseerr.svg
         href: https://overseerr.{{HOMEPAGE_VAR_DOMAIN}}
         description: Demandes de films et séries
         widget:
           type: overseerr
-          url: http://overseerr:5055
+          url: http://seerr:5055
           key: "{{HOMEPAGE_VAR_OVERSEERR_KEY}}"
 
     - Radarr:
