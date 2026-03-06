@@ -413,7 +413,7 @@ chown -R 1000:1000 /mnt/HC_Volume_104978745/downloads
 
 ### Sync ne fonctionne pas
 
-**Symptome** : les fichiers n'arrivent pas sur la Freebox / Plex ne voit pas les nouveaux contenus.
+**Symptome** : les fichiers n'arrivent pas sur la Freebox.
 
 **Diagnostic** :
 
@@ -507,31 +507,25 @@ docker compose restart fail2ban
 
 ---
 
-### Plex ne voit pas les fichiers
+### Fichiers absents sur la Freebox
 
-**Symptome** : les fichiers sont sur la Freebox mais Plex n'affiche pas les nouveaux contenus.
+**Symptome** : les fichiers synchronises ne sont pas visibles sur le NVMe de la Freebox.
 
 **Diagnostic** :
 
 ```bash
 # Sur la Freebox, verifier que les fichiers sont presents
-ls -la /mnt/HC_Volume_104978745/media/films/
-ls -la /mnt/HC_Volume_104978745/media/series/
+ls -la /mnt/NVMe/media/films/
+ls -la /mnt/NVMe/media/series/
 
 # Verifier les permissions
-stat /mnt/HC_Volume_104978745/media/films/<un_fichier>
-
-# Verifier les montages du conteneur Plex
-docker inspect plex | grep -A5 Mounts
+stat /mnt/NVMe/media/films/<un_fichier>
 ```
 
 **Solution** :
 
 1. **Fichiers absents** : la sync rclone n'a pas fonctionne -- voir [Sync ne fonctionne pas](#sync-ne-fonctionne-pas)
-2. **Fichiers presents mais invisibles dans Plex** :
-   - Verifier les permissions : `chown -R 1000:1000 /mnt/HC_Volume_104978745/media`
-   - Les volumes Plex sont montes en `:ro` -- verifier que les chemins correspondent (`/data/films` et `/data/series` dans le conteneur)
-   - Lancer un scan de bibliotheque dans Plex : Parametres -- Bibliotheques -- Scanner
+2. **Permissions incorrectes** : `chown -R 1000:1000 /mnt/NVMe/media`
 3. **Sync incomplete** : verifier les logs rclone, les fichiers `.part` ou `.!qB` sont exclus de la sync
 
 ---
@@ -601,16 +595,19 @@ Causes possibles :
 
 ---
 
-### BasicAuth ne fonctionne pas
+### Authelia ne fonctionne pas
 
-**Symptome** : erreur 401 ou popup d'authentification en boucle sur les services proteges.
+**Symptome** : erreur 401, redirection en boucle, ou page d'auth inaccessible.
 
 **Diagnostic** :
 
 ```bash
-# Verifier que le fichier htpasswd existe et est lisible par nginx
-ls -la /etc/nginx/.htpasswd-media
-cat /etc/nginx/.htpasswd-media
+# Verifier que le conteneur Authelia tourne
+docker ps | grep authelia
+docker logs authelia --tail 30
+
+# Verifier le healthcheck
+docker inspect --format='{{.State.Health.Status}}' authelia
 
 # Tester la config nginx
 nginx -t
@@ -619,21 +616,22 @@ nginx -t
 **Solution** :
 
 ```bash
-# Regenerer le htpasswd
-source /home/adr3bot/bot/media-stack/vps/.env
-htpasswd -bc /etc/nginx/.htpasswd-media "$NGINX_USER" "$NGINX_PASSWORD"
-chmod 640 /etc/nginx/.htpasswd-media
-chown root:www-data /etc/nginx/.htpasswd-media
+# Redemarrer Authelia
+docker compose restart authelia
+
+# Si la base SQLite est corrompue, supprimer et redemarrer
+rm vps/config/authelia/db.sqlite3
+docker compose restart authelia
 
 # Recharger nginx
 nginx -t && systemctl reload nginx
 ```
 
 Causes possibles :
-- Fichier `htpasswd` corrompu ou absent
-- Mauvaises permissions sur le fichier
-- `nginx -t && systemctl reload nginx` oublie apres modification
-- Mot de passe modifie dans `.env` mais pas regenere via `htpasswd`
+- Conteneur Authelia non demarre ou crash
+- Variables d'environnement `AUTHELIA_*` manquantes dans `.env`
+- DNS `auth.DOMAIN` non configure dans Cloudflare
+- Snippet nginx `authelia-authrequest.conf` mal deploye dans `/etc/nginx/snippets/`
 
 ---
 
@@ -720,7 +718,7 @@ grep "webhook\|FAILED" /var/log/rclone-sync.log
 | Element | Chemin | Raison |
 |---|---|---|
 | Variables d'environnement VPS | `vps/.env` | Contient toutes les cles et mots de passe |
-| Variables d'environnement Freebox | `freebox/.env` | Token Plex, config Freebox |
+| Variables d'environnement Freebox | `freebox/.env` | Config Freebox SFTP |
 | Cle SSH rclone | `vps/config/rclone/id_rsa` | Authentification SFTP |
 | Config WireGuard | `/etc/wireguard/wg-freebox.conf` | Tunnel VPS-Freebox |
 | Config Sonarr | `vps/config/sonarr/` | Series suivies, profils, historique |
@@ -730,8 +728,8 @@ grep "webhook\|FAILED" /var/log/rclone-sync.log
 | Config qBittorrent | `vps/config/qbittorrent/` | Torrents actifs, preferences |
 | Config Homepage | `vps/config/homepage/` | Dashboard personnalise |
 | Config Notifiarr | `vps/config/notifiarr/` | Notifications et integrations |
+| Config Authelia | `vps/config/authelia/` | SSO, base utilisateurs, sessions |
 | Certificats SSL | `/etc/ssl/cloudflare/` | Certificats origin Cloudflare |
-| htpasswd | `/etc/nginx/.htpasswd-media` | Authentification nginx |
 
 ### Ce qu'il ne faut PAS sauvegarder
 
@@ -770,9 +768,9 @@ tar czf "$BACKUP_FILE" \
     home/adr3bot/bot/media-stack/vps/config/qbittorrent/ \
     home/adr3bot/bot/media-stack/vps/config/homepage/ \
     home/adr3bot/bot/media-stack/vps/config/notifiarr/ \
+    home/adr3bot/bot/media-stack/vps/config/authelia/ \
     etc/wireguard/wg-freebox.conf \
     etc/ssl/cloudflare/ \
-    etc/nginx/.htpasswd-media \
     2>/dev/null || true
 
 # Garder les 7 derniers backups
@@ -822,7 +820,7 @@ docker logs fail2ban --tail 100
 2. Recreer le VPS depuis zero via Hetzner
 3. Reinstaller avec `setup.sh` + `harden.sh`
 4. Changer **tous** les mots de passe et cles :
-   - Mot de passe nginx (`NGINX_PASSWORD`)
+   - Mot de passe Authelia (`AUTHELIA_PASSWORD`) et secrets (`AUTHELIA_JWT_SECRET`, etc.)
    - Cle WireGuard Mullvad
    - Cle WireGuard tunnel Freebox
    - Cle SSH rclone (regenerer + recopier sur la Freebox)

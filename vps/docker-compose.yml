@@ -8,8 +8,6 @@ services:
     cap_add:
       - NET_ADMIN
       - NET_RAW
-      - CHOWN
-      - DAC_OVERRIDE
     devices:
       - /dev/net/tun:/dev/net/tun
     ports:
@@ -186,7 +184,7 @@ services:
     restart: unless-stopped
 
   # ──────────────────────────────────────────────
-  # Sync VPS → Freebox via SFTP sur tunnel WireGuard (toutes les 5 min)
+  # Sync VPS → Freebox via SFTP sur tunnel WireGuard (toutes les 1 min)
   # ──────────────────────────────────────────────
   rclone:
     image: rclone/rclone:latest
@@ -315,6 +313,33 @@ services:
     restart: unless-stopped
 
   # ──────────────────────────────────────────────
+  # Authentification SSO — Portail unique pour tous les services
+  # ──────────────────────────────────────────────
+  authelia:
+    image: authelia/authelia:latest
+    container_name: authelia
+    environment:
+      - TZ=${TZ}
+      - AUTHELIA_JWT_SECRET=${AUTHELIA_JWT_SECRET}
+      - AUTHELIA_SESSION_SECRET=${AUTHELIA_SESSION_SECRET}
+      - AUTHELIA_STORAGE_ENCRYPTION_KEY=${AUTHELIA_STORAGE_ENCRYPTION_KEY}
+    volumes:
+      - ./config/authelia:/config
+    ports:
+      - "127.0.0.1:9091:9091"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9091/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    security_opt:
+      - "no-new-privileges:true"
+    networks:
+      - media_network
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────
   # Mise à jour automatique des images Docker
   # ──────────────────────────────────────────────
   watchtower:
@@ -327,9 +352,9 @@ services:
       - WATCHTOWER_SCHEDULE=0 0 3 * * *
       - WATCHTOWER_INCLUDE_STOPPED=false
       - WATCHTOWER_NOTIFICATIONS=shoutrrr
-      - WATCHTOWER_NOTIFICATION_URL=discord://${DISCORD_WEBHOOK_TOKEN}@${DISCORD_WEBHOOK_ID}
+      - WATCHTOWER_NOTIFICATION_URL=discord://${DISCORD_WATCHTOWER_WEBHOOK_TOKEN}@${DISCORD_WATCHTOWER_WEBHOOK_ID}
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     security_opt:
       - "no-new-privileges:true"
     networks:

@@ -1,6 +1,6 @@
 # Guide d'installation et d'utilisation - Media Stack
 
-Guide complet pour deployer et utiliser le Media Stack self-hosted : telechargement automatise sur VPS derriere VPN, synchronisation vers Freebox Ultra, lecture Plex 4K direct play.
+Guide complet pour deployer et utiliser le Media Stack self-hosted : telechargement automatise sur VPS derriere VPN, synchronisation vers Freebox Ultra, lecture 4K direct play via le player Freebox.
 
 ---
 
@@ -36,7 +36,6 @@ Avant de commencer, il faut creer ces comptes :
 | Compte | Usage | Lien |
 |---|---|---|
 | **Mullvad VPN** | Protection torrent (WireGuard) | mullvad.net |
-| **Plex** | Serveur de streaming | plex.tv |
 | **Cloudflare** | DNS + proxy + certificats SSL | cloudflare.com |
 | **Hetzner** (ou autre) | Hebergement VPS | hetzner.com |
 
@@ -56,7 +55,7 @@ Avant de commencer, il faut creer ces comptes :
 
 ## 2. Installation Freebox
 
-La Freebox heberge Plex (lecture 4K) et un serveur SFTP (reception des fichiers depuis le VPS). On la configure en premier car le VPS a besoin des informations WireGuard de la Freebox.
+La Freebox heberge un serveur SFTP (reception des fichiers depuis le VPS). La lecture se fait directement via le player Freebox integre. On configure la Freebox en premier car le VPS a besoin des informations WireGuard.
 
 ### 2.1 Activer Docker dans Freebox OS
 
@@ -152,12 +151,8 @@ Voici chaque variable avec son explication :
 | `PUID` | ID utilisateur Linux (laisser 1000 par defaut) | `1000` |
 | `PGID` | ID groupe Linux (laisser 1000 par defaut) | `1000` |
 | `TZ` | Fuseau horaire | `Europe/Paris` |
-| `FREEBOX_IP` | Adresse IP locale de la Freebox sur le reseau | `192.168.1.254` |
-| `PLEX_CLAIM` | Token d'activation Plex (expire en 4 min !) | `claim-xxxxxxxxxxxxxxxxxxxx` |
 | `MEDIA_PATH` | Chemin des medias dans la VM | `/data/media` |
 | `SFTP_USER` | Nom utilisateur pour la connexion SFTP | `mediastack` |
-
-> **Attention** : Le `PLEX_CLAIM` expire en **4 minutes**. Genere-le sur https://plex.tv/claim juste avant de lancer le script d'installation, pas avant.
 
 Exemple de fichier `.env` complet :
 
@@ -165,9 +160,6 @@ Exemple de fichier `.env` complet :
 PUID=1000
 PGID=1000
 TZ=Europe/Paris
-
-FREEBOX_IP=192.168.1.254
-PLEX_CLAIM=claim-abc123def456ghi789
 
 MEDIA_PATH=/data/media
 
@@ -185,28 +177,24 @@ Le script effectue les operations suivantes :
 1. **Verifie Docker** : s'assure que Docker et Docker Compose v2 sont disponibles
 2. **Cree les repertoires** :
    - `/mnt/NVMe/media/films` et `/mnt/NVMe/media/series` pour les medias
-   - `/opt/plex/config` et `/opt/plex/transcode` pour Plex
 3. **Prepare le conteneur SFTP** : cree le repertoire `config/sftp/ssh/`
 4. **Copie .env.example vers .env** si le fichier n'existe pas encore
 5. **Verifie les variables** : s'arrete si des valeurs `CHANGE_ME` restent
 6. **Demande la cle SSH publique du VPS** : cette cle sera utilisee par rclone pour se connecter en SFTP. Tu l'obtiendras lors de l'installation du VPS (etape 3)
 7. **Demande confirmation** puis lance `docker compose up -d`
-8. **Attend que Plex soit accessible** (timeout 60 secondes)
 
 > **Note** : Si tu n'as pas encore la cle SSH du VPS, laisse le champ vide et appuie sur Entree. Tu pourras l'ajouter manuellement plus tard dans `config/sftp/ssh/authorized_key`.
 
 A la fin, tu verras :
 
 ```
-  Plex  -> http://192.168.1.254:32400/web
-  SFTP  -> 192.168.27.64:2222 (via tunnel WireGuard)
+  SFTP  -> port 2222 (via tunnel WireGuard)
 ```
 
 ### 2.6 Services lances sur la Freebox
 
 | Service | Port | Role |
 |---|---|---|
-| **Plex** | 32400 | Serveur de streaming (mode host) |
 | **SFTP** | 2222 | Reception des fichiers depuis le VPS via WireGuard |
 
 ---
@@ -307,15 +295,22 @@ Ces valeurs viennent du **fichier .conf telecharge a l'etape 2.2** :
 | Variable | Description | Exemple |
 |---|---|---|
 | `DOMAIN` | Domaine pointant vers le VPS | `media.exemple.fr` |
-| `NGINX_USER` | Utilisateur pour l'authentification basique | `admin` |
-| `NGINX_PASSWORD` | Mot de passe pour l'authentification basique | `UnMotDePasseSecure123!` |
+
+#### Authelia SSO
+
+| Variable | Description | Exemple |
+|---|---|---|
+| `AUTHELIA_JWT_SECRET` | Secret JWT (min 32 chars) | `openssl rand -hex 32` |
+| `AUTHELIA_SESSION_SECRET` | Secret session (min 32 chars) | `openssl rand -hex 32` |
+| `AUTHELIA_STORAGE_ENCRYPTION_KEY` | Cle chiffrement stockage (min 32 chars) | `openssl rand -hex 32` |
+| `AUTHELIA_USER` | Nom d'utilisateur SSO | `admin` |
+| `AUTHELIA_PASSWORD` | Mot de passe SSO (hashe en Argon2id par setup.sh) | `UnMotDePasseSecure123!` |
+| `AUTHELIA_EMAIL` | Email de l'utilisateur | `admin@exemple.fr` |
 
 #### Homepage (Dashboard)
 
 | Variable | Description | Exemple |
 |---|---|---|
-| `HOMEPAGE_USER` | Utilisateur pour le dashboard | `admin` |
-| `HOMEPAGE_PASSWORD` | Mot de passe pour le dashboard | `UnMotDePasseSecure123!` |
 | `HOMEPAGE_RADARR_KEY` | Cle API Radarr pour Homepage | Copier depuis Radarr > Settings > General |
 | `HOMEPAGE_SONARR_KEY` | Cle API Sonarr pour Homepage | Copier depuis Sonarr > Settings > General |
 | `HOMEPAGE_PROWLARR_KEY` | Cle API Prowlarr pour Homepage | Copier depuis Prowlarr > Settings > General |
@@ -361,11 +356,14 @@ FREEBOX_SFTP_USER=mediastack
 FREEBOX_MEDIA_PATH=/data
 
 DOMAIN=media.exemple.fr
-NGINX_USER=admin
-NGINX_PASSWORD=UnMotDePasseSecure123!
 
-HOMEPAGE_USER=admin
-HOMEPAGE_PASSWORD=UnMotDePasseSecure123!
+AUTHELIA_JWT_SECRET=generez_avec_openssl_rand_hex_32
+AUTHELIA_SESSION_SECRET=generez_avec_openssl_rand_hex_32
+AUTHELIA_STORAGE_ENCRYPTION_KEY=generez_avec_openssl_rand_hex_32
+AUTHELIA_USER=admin
+AUTHELIA_PASSWORD=UnMotDePasseSecure123!
+AUTHELIA_EMAIL=admin@exemple.fr
+
 HOMEPAGE_RADARR_KEY=votreCleApiRadarr
 HOMEPAGE_SONARR_KEY=votreCleApiSonarr
 HOMEPAGE_PROWLARR_KEY=votreCleApiProwlarr
@@ -398,11 +396,12 @@ Voici ce que fait chaque etape du script :
 | 7 | **Generation rclone.conf** | Configure rclone pour la connexion SFTP vers la Freebox via le tunnel |
 | 8 | **Scan cle hote SFTP** | Enregistre la cle du serveur SFTP Freebox dans `known_hosts` |
 | 9 | **Affiche la cle SSH publique** | **A copier** pour la coller cote Freebox dans `config/sftp/ssh/authorized_key` |
-| 10 | **Configuration nginx** | Installe nginx, genere le `htpasswd`, deploie la config reverse proxy |
-| 11 | **Durcissement systeme** | Propose de lancer `harden.sh` (optionnel mais recommande) |
-| 12-13 | **Lancement Docker** | Demande confirmation puis lance `docker compose up -d` |
-| 14 | **Healthchecks** | Attend que Gluetun et Prowlarr soient healthy (timeout 120s) |
-| 15 | **Resume** | Affiche les URLs de tous les services |
+| 10 | **Configuration Authelia** | Genere le hash Argon2id du mot de passe, configure users_database.yml |
+| 11 | **Configuration nginx** | Installe nginx, deploie la config reverse proxy avec auth_request Authelia |
+| 12 | **Durcissement systeme** | Propose de lancer `harden.sh` (optionnel mais recommande) |
+| 13-15 | **Lancement Docker** | Demande confirmation puis lance `docker compose up -d` |
+| 16 | **Healthchecks** | Attend que Gluetun, Prowlarr et Authelia soient healthy (timeout 120s) |
+| 17 | **Resume** | Affiche les URLs de tous les services |
 
 > **Attention** : A l'etape 9, le script affiche une cle SSH publique. **Copie-la** et retourne sur la Freebox pour la coller dans `freebox/config/sftp/ssh/authorized_key`. Sans cette cle, rclone ne pourra pas se connecter pour synchroniser les fichiers.
 
@@ -445,22 +444,28 @@ Creer les enregistrements A suivants (tous pointent vers l'IP du VPS) :
 
 | Type | Nom | Contenu | Proxy |
 |---|---|---|---|
+| A | `auth` | IP du VPS | Active (orange) |
 | A | `overseerr` | IP du VPS | Active (orange) |
 | A | `sonarr` | IP du VPS | Active (orange) |
 | A | `radarr` | IP du VPS | Active (orange) |
 | A | `prowlarr` | IP du VPS | Active (orange) |
 | A | `qbittorrent` | IP du VPS | Active (orange) |
 | A | `home` | IP du VPS | Active (orange) |
+| A | `logs` | IP du VPS | Active (orange) |
+| A | `jackett` | IP du VPS | Active (orange) |
 
 Exemple concret avec le domaine `media.exemple.fr` :
 
 ```
+auth.media.exemple.fr         ->  95.217.xx.xx  (Proxy ON)
 overseerr.media.exemple.fr    ->  95.217.xx.xx  (Proxy ON)
 sonarr.media.exemple.fr       ->  95.217.xx.xx  (Proxy ON)
 radarr.media.exemple.fr       ->  95.217.xx.xx  (Proxy ON)
 prowlarr.media.exemple.fr     ->  95.217.xx.xx  (Proxy ON)
 qbittorrent.media.exemple.fr  ->  95.217.xx.xx  (Proxy ON)
 home.media.exemple.fr         ->  95.217.xx.xx  (Proxy ON)
+logs.media.exemple.fr         ->  95.217.xx.xx  (Proxy ON)
+jackett.media.exemple.fr      ->  95.217.xx.xx  (Proxy ON)
 ```
 
 > **Note** : Le proxy Cloudflare (icone orange) masque l'IP reelle du VPS et offre une protection DDoS gratuite.
@@ -542,7 +547,7 @@ Une fois les services lances, il faut les configurer dans cet ordre precis.
 
 Acceder a `https://prowlarr.DOMAIN` (ex: `https://prowlarr.media.exemple.fr`).
 
-> **Note** : Un identifiant et mot de passe basic auth te seront demandes (ceux configures dans `NGINX_USER` et `NGINX_PASSWORD`).
+> **Note** : Tu seras redirige vers Authelia pour t'authentifier (two_factor pour les services admin).
 
 **Premiere connexion** : Prowlarr demandera de creer un compte admin. Choisis un nom d'utilisateur et un mot de passe.
 
@@ -652,17 +657,11 @@ La configuration est identique a Radarr :
 
 Acceder a `https://overseerr.DOMAIN`.
 
-> **Note** : Overseerr n'a pas de basic auth nginx car il possede sa propre authentification.
+> **Note** : Overseerr est protege par Authelia en one_factor (pas de 2FA requis, accessible aux amis/famille).
 
 **Configuration initiale** :
 
-1. **Connecter Plex** :
-   - Cliquer sur **Sign in with Plex**
-   - Se connecter avec ton compte Plex
-   - Selectionner le serveur Plex de la Freebox
-   - Synchroniser les bibliotheques
-
-2. **Connecter Radarr** :
+1. **Connecter Radarr** :
    - Aller dans **Settings** > **Services**
    - Cliquer sur **Add Radarr Server**
    - Remplir :
@@ -676,9 +675,9 @@ Acceder a `https://overseerr.DOMAIN`.
 | Quality Profile | Selectionner le profil `4K FR` |
 | Root Folder | `/data/media/films` |
 
-3. **Connecter Sonarr** : meme procedure avec le port `8989` et le Root Folder `/data/media/series`
+2. **Connecter Sonarr** : meme procedure avec le port `8989` et le Root Folder `/data/media/series`
 
-4. **Configurer les utilisateurs** : dans **Settings** > **Users**, definir les permissions pour les utilisateurs qui pourront faire des demandes
+3. **Configurer les utilisateurs** : dans **Settings** > **Users**, definir les permissions pour les utilisateurs qui pourront faire des demandes
 
 ### 4.5 Homepage - Dashboard
 
@@ -696,39 +695,7 @@ Homepage se configure via des fichiers YAML dans le repertoire `config/homepage/
 
 Les cles API des services sont passees en variables d'environnement (`HOMEPAGE_RADARR_KEY`, `HOMEPAGE_SONARR_KEY`, etc.) et referencees dans les fichiers YAML.
 
-> **Note** : Homepage n'a pas d'authentification interne. L'acces est protege par l'authentification basique nginx (`NGINX_USER` / `NGINX_PASSWORD`).
-
-### 4.6 Plex - Serveur de streaming
-
-Acceder a `http://FREEBOX_IP:32400/web` (ex: `http://192.168.1.254:32400/web`).
-
-**Configuration initiale** :
-
-1. Se connecter avec ton compte Plex
-2. Donner un nom au serveur (ex: "Media Stack")
-
-**Ajouter les bibliotheques** :
-
-1. **Films** :
-   - Cliquer sur **Add Library** > **Movies**
-   - Nom : `Films`
-   - Dossier : `/data/films`
-
-2. **Series** :
-   - Cliquer sur **Add Library** > **TV Shows**
-   - Nom : `Series`
-   - Dossier : `/data/series`
-
-**Reglages recommandes** :
-
-| Reglage | Valeur | Ou le trouver |
-|---|---|---|
-| Transcoder quality | "Make my CPU hurt" | Settings > Transcoder |
-| Background transcoding | `veryfast` | Settings > Transcoder |
-| Generate video preview thumbnails | Desactive | Settings > Library |
-| Generate chapter image thumbnails | Desactive | Settings > Library |
-
-> **Note** : Desactiver les previews et les thumbnails de chapitres reduit fortement la charge CPU et l'utilisation disque, surtout avec une grosse bibliotheque.
+> **Note** : Homepage n'a pas d'authentification interne. L'acces est protege par Authelia (two_factor).
 
 ---
 
@@ -772,14 +739,9 @@ ls -la /data/media/series/
 
 La synchronisation est transparente : une fois le telechargement termine et le fichier deplace par Sonarr/Radarr dans `/data/media/`, rclone le detecte et le transfere vers la Freebox via le tunnel WireGuard chiffre.
 
-### 5.4 Acceder au contenu via Plex
+### 5.4 Acceder au contenu
 
-1. Ouvrir l'application **Plex** (TV, telephone, navigateur, Apple TV, etc.)
-2. Se connecter avec ton compte Plex
-3. Le contenu apparait automatiquement dans les bibliotheques Films et Series
-4. Lancer la lecture (4K direct play depuis le reseau local)
-
-> **Note** : En local (meme reseau que la Freebox), Plex fait du **direct play** : pas de transcodage, qualite maximale. A distance, Plex peut transcoder selon la bande passante.
+Les medias synchronises sont disponibles directement sur le NVMe de la Freebox Ultra. Le player Freebox integre lit les fichiers en 4K direct play depuis le reseau local.
 
 ---
 
@@ -824,13 +786,10 @@ docker logs rclone --tail 20
 
 4. Attendre le prochain cycle de sync (max 1 min) ou verifier que le fichier est synchronise
 
-### Etape 5 : Verifier dans Plex
+### Etape 5 : Verifier sur la Freebox
 
-1. Ouvrir **Plex** (`http://FREEBOX_IP:32400/web`)
-2. Verifier que le film apparait dans la bibliotheque Films
-3. Lancer la lecture pour confirmer que tout fonctionne
-
-> **Note** : Si le film n'apparait pas tout de suite dans Plex, tu peux forcer un scan : **Bibliotheque** > **...** > **Scan Library Files**.
+1. Verifier que le fichier est present sur le NVMe (`/mnt/NVMe/media/films/`)
+2. Lancer la lecture via le player Freebox pour confirmer que tout fonctionne
 
 Si toutes les etapes sont validees, ta stack est operationnelle.
 
@@ -962,11 +921,10 @@ Causes possibles :
 - Le tunnel WireGuard est inactif
 - Le conteneur SFTP n'est pas demarre sur la Freebox
 
-### Plex ne voit pas les fichiers
+### Les fichiers n'apparaissent pas sur la Freebox
 
 1. Verifier que les fichiers sont presents dans `/mnt/NVMe/media/` sur la Freebox
-2. Forcer un scan de la bibliotheque dans Plex
-3. Verifier les permissions :
+2. Verifier les permissions :
 
 ```bash
 # Sur la Freebox

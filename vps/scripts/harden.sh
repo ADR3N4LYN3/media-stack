@@ -86,7 +86,7 @@ echo ""
 echo "  OUTBOUND : tout autoriser (défaut Hetzner)"
 echo ""
 echo "  Tout le reste est bloqué par défaut — aucun port interne"
-echo "  (Sonarr, Radarr, Prowlarr, Homarr...) ne doit être accessible."
+echo "  (Sonarr, Radarr, Prowlarr, Homepage...) ne doit être accessible."
 echo ""
 
 # ── 3. Kernel tweaks ──

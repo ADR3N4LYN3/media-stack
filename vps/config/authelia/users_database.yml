@@ -1,0 +1,15 @@
+# ═══════════════════════════════════════════
+# Authelia — Base utilisateurs
+# ═══════════════════════════════════════════
+# Generer un hash de mot de passe :
+#   docker run --rm authelia/authelia:latest crypto hash generate argon2 --password 'MOT_DE_PASSE'
+#
+# setup.sh genere automatiquement le hash a partir de AUTHELIA_PASSWORD
+
+users:
+  AUTHELIA_USER_PLACEHOLDER:
+    displayname: Admin
+    password: AUTHELIA_HASH_PLACEHOLDER
+    email: AUTHELIA_EMAIL_PLACEHOLDER
+    groups:
+      - admins

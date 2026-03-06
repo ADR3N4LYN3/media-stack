@@ -19,7 +19,10 @@ vps/config/radarr/
 vps/config/prowlarr/
 vps/config/overseerr/
 vps/config/gluetun/
-vps/config/homarr/
+vps/config/homepage/
+vps/config/jackett/
+vps/config/authelia/db.sqlite3
+vps/config/authelia/notification.txt
 # qBittorrent : on versionne le .conf initial mais pas le reste du runtime
 vps/config/qbittorrent/*
 !vps/config/qbittorrent/qBittorrent.conf
@@ -32,6 +35,4 @@ freebox/config/sftp/
 *.log
 
 # Docker volumes
-caddy_data/
-caddy_config/
 fail2ban_data/

@@ -1,0 +1,77 @@
+# ═══════════════════════════════════════════
+# Authelia — Configuration SSO Media Stack
+# ═══════════════════════════════════════════
+# Les secrets (jwt_secret, session.secret, storage.encryption_key)
+# sont injectes via variables d'environnement AUTHELIA_*
+
+server:
+  address: 'tcp://0.0.0.0:9091/'
+
+log:
+  level: info
+
+# ── Portail d'authentification ──
+theme: dark
+
+# ── TOTP (2FA) ──
+totp:
+  issuer: Media Stack
+  period: 30
+  digits: 6
+
+# ── Base utilisateurs locale (fichier YAML) ──
+authentication_backend:
+  file:
+    path: /config/users_database.yml
+    password:
+      algorithm: argon2id
+      iterations: 3
+      memory: 65536
+      parallelism: 4
+      salt_length: 16
+      key_length: 32
+
+# ── Politique d'acces ──
+access_control:
+  default_policy: deny
+
+  rules:
+    # Overseerr : one_factor (accessible aux amis/famille)
+    - domain: 'overseerr.{{ .Env.AUTHELIA_DOMAIN }}'
+      policy: one_factor
+
+    # Services admin : two_factor
+    - domain: 'sonarr.{{ .Env.AUTHELIA_DOMAIN }}'
+      policy: two_factor
+    - domain: 'radarr.{{ .Env.AUTHELIA_DOMAIN }}'
+      policy: two_factor
+    - domain: 'prowlarr.{{ .Env.AUTHELIA_DOMAIN }}'
+      policy: two_factor
+    - domain: 'qbittorrent.{{ .Env.AUTHELIA_DOMAIN }}'
+      policy: two_factor
+    - domain: 'jackett.{{ .Env.AUTHELIA_DOMAIN }}'
+      policy: two_factor
+    - domain: 'home.{{ .Env.AUTHELIA_DOMAIN }}'
+      policy: two_factor
+    - domain: 'logs.{{ .Env.AUTHELIA_DOMAIN }}'
+      policy: two_factor
+
+# ── Session ──
+session:
+  cookies:
+    - domain: '{{ .Env.AUTHELIA_DOMAIN }}'
+      authelia_url: 'https://auth.{{ .Env.AUTHELIA_DOMAIN }}'
+      default_redirection_url: 'https://home.{{ .Env.AUTHELIA_DOMAIN }}'
+  expiration: 12h
+  inactivity: 2h
+  remember_me: 1M
+
+# ── Stockage (SQLite local) ──
+storage:
+  local:
+    path: /config/db.sqlite3
+
+# ── Notifications (filesystem pour commencer, SMTP optionnel) ──
+notifier:
+  filesystem:
+    filename: /config/notification.txt

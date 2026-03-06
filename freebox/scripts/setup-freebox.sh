@@ -47,16 +47,13 @@ ok "Docker Compose $(docker compose version --short)"
 
 info "Création des répertoires..."
 
-mkdir -p /mnt/NVMe/media/films
-mkdir -p /mnt/NVMe/media/series
-mkdir -p /opt/plex/config
-mkdir -p /opt/plex/transcode
-
 PUID="${PUID:-1000}"
 PGID="${PGID:-1000}"
 
+mkdir -p /mnt/NVMe/media/films
+mkdir -p /mnt/NVMe/media/series
+
 chown -R "${PUID}:${PGID}" /mnt/NVMe/media
-chown -R "${PUID}:${PGID}" /opt/plex
 
 ok "Répertoires créés avec permissions ${PUID}:${PGID}"
 
@@ -99,21 +96,6 @@ if [ ${#MISSING[@]} -gt 0 ]; then
         echo -e "  ${YELLOW}→ $var${NC}"
     done
     echo ""
-
-    # Warning spécial PLEX_CLAIM
-    for var in "${MISSING[@]}"; do
-        if [ "$var" = "PLEX_CLAIM" ]; then
-            echo -e "  ${RED}╔══════════════════════════════════════════════════════════╗${NC}"
-            echo -e "  ${RED}║  Récupère ton claim token MAINTENANT :                   ║${NC}"
-            echo -e "  ${RED}║  https://plex.tv/claim                                   ║${NC}"
-            echo -e "  ${RED}║  Il expire dans 4 minutes !                              ║${NC}"
-            echo -e "  ${RED}║  Mets-le dans .env puis relance ce script.               ║${NC}"
-            echo -e "  ${RED}╚══════════════════════════════════════════════════════════╝${NC}"
-            echo ""
-            break
-        fi
-    done
-
     echo "Remplis ces variables dans $PROJECT_DIR/.env puis relance ce script."
     exit 1
 fi
@@ -157,53 +139,18 @@ if [[ ! "$confirm" =~ ^[oOyY]$ ]]; then
     exit 0
 fi
 
-info "Démarrage de Plex + SFTP..."
+info "Démarrage du conteneur SFTP..."
 docker compose up -d
 
-# ── 8. Attente que Plex soit accessible ──
-
-info "Attente que Plex soit accessible..."
-
-FREEBOX_IP="${FREEBOX_IP:-localhost}"
-TIMEOUT=60
-ELAPSED=0
-
-while [ $ELAPSED -lt $TIMEOUT ]; do
-    if curl -s -o /dev/null -w '%{http_code}' "http://${FREEBOX_IP}:32400/identity" | grep -q "200"; then
-        break
-    fi
-    sleep 5
-    ELAPSED=$((ELAPSED + 5))
-    echo -ne "\r  Attente de Plex... ${ELAPSED}s / ${TIMEOUT}s"
-done
-
-echo ""
-
-if [ $ELAPSED -ge $TIMEOUT ]; then
-    warn "Plex ne répond pas encore — il peut prendre plus de temps au premier démarrage"
-else
-    ok "Plex est accessible"
-fi
-
-# ── 9. Résumé ──
+# ── 8. Résumé ──
 
 echo ""
 echo "═══════════════════════════════════════════"
-echo "  Plex + SFTP démarrés !"
+echo "  SFTP démarré !"
 echo "═══════════════════════════════════════════"
 echo ""
-echo -e "  ${GREEN}Plex${NC}  → http://${FREEBOX_IP}:32400/web"
-echo -e "  ${GREEN}SFTP${NC}  → ${WG_FREEBOX_IP:-?}:2222 (via tunnel WireGuard)"
+echo -e "  ${GREEN}SFTP${NC}  → port 2222 (via tunnel WireGuard)"
 echo ""
-echo "  Prochaines étapes :"
-echo "  1. Ouvre Plex et termine la configuration initiale"
-echo "  2. Ajoute les bibliothèques :"
-echo "     - Films  → /data/films"
-echo "     - Séries → /data/series"
-echo ""
-echo "  Réglages recommandés dans Plex :"
-echo "  - Transcoder quality → \"Make my CPU hurt\""
-echo "  - Background transcoding → veryfast"
-echo "  - Generate video preview thumbnails → Désactivé"
-echo "  - Generate chapter image thumbnails → Désactivé"
+echo "  Les médias synchronisés par rclone seront disponibles"
+echo "  directement via le player Freebox sur le NVMe interne."
 echo ""

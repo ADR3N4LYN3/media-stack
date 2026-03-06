@@ -12,7 +12,7 @@ ignoreip = 127.0.0.1/8 ::1
 
 [sshd]
 enabled  = true
-port     = ssh
+port     = 2222
 logpath  = /var/log/auth.log
 maxretry = 3
 bantime  = 24h

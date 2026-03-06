@@ -19,8 +19,8 @@ Documentation detaillee de l'architecture du projet media-stack : infrastructure
 
 L'architecture repose sur deux noeuds physiques relies par un tunnel WireGuard chiffre :
 
-- **VPS Hetzner AX22** (Helsinki) : telechargement automatise derriere VPN Mullvad, gestion des medias, reverse proxy HTTPS. Stockage sur Hetzner Volume 250GB monte a `/mnt/HC_Volume_104978745` (`DATA_PATH=/mnt/HC_Volume_104978745`, contient `downloads/` et `media/` sur le meme filesystem pour les hardlinks)
-- **Freebox Ultra** (domicile) : stockage NVMe interne, lecture Plex 4K direct play
+- **VPS Hetzner AX22** (Helsinki) : telechargement automatise derriere VPN Mullvad, gestion des medias, reverse proxy HTTPS. Stockage sur Hetzner Volume monte a `DATA_PATH` (contient `downloads/` et `media/` sur le meme filesystem pour les hardlinks)
+- **Freebox Ultra** (domicile) : stockage NVMe interne, lecture 4K via le player Freebox integre
 
 ```
                          Internet
@@ -33,13 +33,15 @@ L'architecture repose sur deux noeuds physiques relies par un tunnel WireGuard c
     |            VPS Hetzner AX22 (Helsinki)                 |
     |                       |                                |
     |              [nginx reverse proxy]                     |
+    |                       |                                |
+    |              [authelia SSO] ← auth_request             |
     |             /    |    |    |    \                       |
     |            /     |    |    |     \                      |
     |     overseerr sonarr radarr prowlarr homepage           |
     |         |        |    |       |    dozzle              |
     |         |        |    |       |    notifiarr            |
     |         |        |    |       |    byparr               |
-    |         |        |    |       |                         |
+    |         |        |    |       |    jackett              |
     |         +--------+----+-------+                        |
     |                  |                                     |
     |           [qbittorrent]                                |
@@ -62,9 +64,7 @@ L'architecture repose sur deux noeuds physiques relies par un tunnel WireGuard c
     |                   +-- films/                            |
     |                   +-- series/                           |
     |                            |                           |
-    |                    [plex] <--- lecture 4K               |
-    |                       |                                |
-    |                  port 32400                             |
+    |              [player freebox] ← lecture 4K direct play |
     ==========================================================
 ```
 
@@ -73,6 +73,7 @@ L'architecture repose sur deux noeuds physiques relies par un tunnel WireGuard c
 | Composant | Emplacement | Role |
 |---|---|---|
 | nginx | VPS (host) | Reverse proxy HTTPS, terminaison SSL Cloudflare |
+| Authelia | VPS | SSO — portail d'authentification unique (one_factor/two_factor) |
 | Overseerr | VPS | Interface de demande utilisateur (films/series) |
 | Sonarr | VPS | Gestion automatisee des series TV |
 | Radarr | VPS | Gestion automatisee des films |
@@ -80,20 +81,20 @@ L'architecture repose sur deux noeuds physiques relies par un tunnel WireGuard c
 | qBittorrent | VPS | Client torrent derriere VPN |
 | Gluetun | VPS | Tunnel VPN Mullvad WireGuard pour qBittorrent |
 | rclone | VPS | Synchronisation SFTP VPS vers Freebox |
-| Fail2ban | VPS | Protection brute-force SSH et nginx BasicAuth |
+| Fail2ban | VPS | Protection brute-force SSH et auth nginx |
 | Homepage | VPS | Dashboard de monitoring centralise (widgets YAML) |
 | Dozzle | VPS | Visualiseur de logs Docker web |
 | Notifiarr | VPS | Notifications Discord (Sonarr/Radarr) |
 | Byparr | VPS | Bypass Cloudflare pour Prowlarr (remplace FlareSolverr) |
+| Jackett | VPS | Indexeur torrent supplementaire |
 | Watchtower | VPS | Mise a jour automatique des images Docker |
-| Plex | Freebox | Serveur media, lecture 4K direct play |
 | SFTP | Freebox | Reception des fichiers depuis le VPS |
 
 ---
 
 ## Services Docker VPS
 
-Le VPS execute 14 conteneurs Docker definis dans `vps/docker-compose.yml`. Tous partagent le reseau `media_network` (sauf exceptions notees).
+Le VPS execute 15 conteneurs Docker definis dans `vps/docker-compose.yml`. Tous partagent le reseau `media_network` (sauf exceptions notees).
 
 ### 1. Gluetun
 
@@ -104,7 +105,7 @@ Passerelle VPN obligatoire pour tout le trafic torrent.
 | Image | `qmcgaw/gluetun:latest` |
 | Ports | `127.0.0.1:${PORT_QBITTORRENT}:8080` (WebUI qBittorrent) |
 | Reseau | `media_network` |
-| Capabilities | `NET_ADMIN`, `NET_RAW`, `CHOWN`, `DAC_OVERRIDE` |
+| Capabilities | `NET_ADMIN`, `NET_RAW` |
 | Devices | `/dev/net/tun` |
 | Volumes | `./config/gluetun:/gluetun`, tmpfs `/tmp/gluetun` |
 | Healthcheck | `wget -qO- http://ipinfo.io/ip` (30s interval, 60s start) |
@@ -191,7 +192,7 @@ Interface utilisateur pour les demandes de films et series.
 | Volumes | `./config/overseerr:/app/config` |
 | Security | `no-new-privileges:true` |
 
-Overseerr est le seul service sans BasicAuth nginx (il possede sa propre authentification interne).
+Overseerr est protege par Authelia en one_factor (accessible aux amis/famille sans 2FA).
 
 ### 7. Homepage
 
@@ -202,12 +203,37 @@ Dashboard de monitoring centralise avec widgets YAML.
 | Image | `ghcr.io/gethomepage/homepage:latest` |
 | Ports | `127.0.0.1:7575:3000` |
 | Reseau | `media_network` |
-| Volumes | `./config/homepage:/app/config`, `/var/run/docker.sock:/var/run/docker.sock:ro`, `/mnt/HC_Volume_104978745:/mnt/HC_Volume_104978745:ro` |
+| Volumes | `./config/homepage:/app/config`, `/var/run/docker.sock:/var/run/docker.sock:ro` |
 | Security | `no-new-privileges:true` |
 
 Widgets configures : search (Overseerr), resources (CPU/RAM/disk systeme + volume Hetzner), datetime.
 
-### 8. rclone
+### 8. Authelia
+
+Portail d'authentification unique (SSO) pour tous les services.
+
+| Propriete | Valeur |
+|---|---|
+| Image | `authelia/authelia:latest` |
+| Ports | `127.0.0.1:9091:9091` |
+| Reseau | `media_network` |
+| Volumes | `./config/authelia:/config` |
+| Healthcheck | `wget -qO- http://localhost:9091/api/health` (30s interval) |
+| Security | `no-new-privileges:true` |
+
+**Politique d'acces :**
+- Overseerr : `one_factor` (login simple, pour amis/famille)
+- Services admin (Sonarr, Radarr, Prowlarr, qBittorrent, Homepage, Dozzle, Jackett) : `two_factor` (TOTP obligatoire)
+- Endpoints API Sonarr/Radarr (`/api`) : exclus de l'auth (communication inter-services via API key)
+
+**Configuration :**
+- Backend : fichier YAML local (`users_database.yml`)
+- Hash : Argon2id (genere par `setup.sh`)
+- Session : 12h expiration, 2h inactivite, 1 mois remember_me
+- Stockage : SQLite local
+- 2FA : TOTP (30s, 6 digits)
+
+### 9. rclone
 
 Synchronisation automatique des medias du VPS vers la Freebox via SFTP sur tunnel WireGuard.
 
@@ -233,7 +259,7 @@ Synchronisation automatique des medias du VPS vers la Freebox via SFTP sur tunne
 - Connexion via IP WireGuard de la Freebox, port 2222
 - Authentification par cle SSH
 
-### 9. Fail2ban
+### 10. Fail2ban
 
 Protection contre les attaques brute-force.
 
@@ -248,15 +274,12 @@ Protection contre les attaques brute-force.
 
 | Jail | Port | Log | Max retries | Ban time |
 |---|---|---|---|---|
-| `sshd` | SSH | `/var/log/auth.log` | 3 | 24h |
+| `sshd` | 2222 | `/var/log/auth.log` | 3 | 24h |
 | `nginx-auth` | HTTP/HTTPS | `/var/log/nginx/error.log` | 5 | 1h |
 
-**Filtre nginx-auth** (`vps/fail2ban/filter.d/nginx-auth.conf`) — detecte :
-- Aucun user/password fourni pour BasicAuth
-- Utilisateur non trouve
-- Mot de passe incorrect
+**Filtre nginx-auth** (`vps/fail2ban/filter.d/nginx-auth.conf`) — detecte les echecs d'authentification nginx.
 
-### 10. Watchtower
+### 11. Watchtower
 
 Mise a jour automatique des images Docker.
 
@@ -264,16 +287,16 @@ Mise a jour automatique des images Docker.
 |---|---|
 | Image | `containrrr/watchtower:latest` |
 | Reseau | `media_network` |
-| Volumes | `/var/run/docker.sock:/var/run/docker.sock` |
+| Volumes | `/var/run/docker.sock:/var/run/docker.sock:ro` |
 | Security | `no-new-privileges:true` |
 
 **Configuration :**
 - Planification : tous les jours a 3h00 (`0 0 3 * * *`)
 - Nettoyage des anciennes images : actif
 - Conteneurs arretes ignores
-- Notifications Discord via Shoutrrr (`discord://${DISCORD_WEBHOOK_TOKEN}@${DISCORD_WEBHOOK_ID}`)
+- Notifications Discord via Shoutrrr (`discord://${DISCORD_WATCHTOWER_WEBHOOK_TOKEN}@${DISCORD_WATCHTOWER_WEBHOOK_ID}`) dans le salon #systeme
 
-### 11. Dozzle
+### 12. Dozzle
 
 Visualiseur de logs Docker en temps reel via interface web.
 
@@ -284,7 +307,7 @@ Visualiseur de logs Docker en temps reel via interface web.
 | Reseau | `media_network` |
 | Volumes | `/var/run/docker.sock:/var/run/docker.sock:ro` |
 
-### 12. Notifiarr
+### 13. Notifiarr
 
 Notifications Discord pour les evenements Sonarr et Radarr.
 
@@ -296,7 +319,7 @@ Notifications Discord pour les evenements Sonarr et Radarr.
 | Volumes | `./config/notifiarr:/config`, `/var/run/docker.sock:/var/run/docker.sock:ro` |
 | Env | `DN_API_KEY=${NOTIFIARR_API_KEY}` |
 
-### 13. Byparr
+### 14. Byparr
 
 Bypass Cloudflare pour les indexeurs Prowlarr (remplace FlareSolverr).
 
@@ -308,30 +331,24 @@ Bypass Cloudflare pour les indexeurs Prowlarr (remplace FlareSolverr).
 
 Utilise par Prowlarr comme proxy pour les indexeurs proteges par Cloudflare.
 
+### 15. Jackett
+
+Indexeur torrent supplementaire.
+
+| Propriete | Valeur |
+|---|---|
+| Image | `linuxserver/jackett:latest` |
+| Ports | `127.0.0.1:9117:9117` |
+| Reseau | `media_network` |
+| Security | `no-new-privileges:true` |
+
 ---
 
 ## Services Docker Freebox
 
-La Freebox Ultra execute 2 conteneurs dans une VM Docker, definis dans `freebox/docker-compose.yml`.
+La Freebox Ultra execute 1 conteneur dans une VM Docker, defini dans `freebox/docker-compose.yml`. La lecture des medias se fait directement via le player Freebox integre (pas de Plex).
 
-### 1. Plex
-
-Serveur media pour la lecture 4K direct play.
-
-| Propriete | Valeur |
-|---|---|
-| Image | `plexinc/pms-docker:latest` |
-| Reseau | `network_mode: host` |
-| Ports | 32400 (via host) |
-| Volumes | `/opt/plex/config:/config`, `/opt/plex/transcode:/transcode`, `${MEDIA_PATH}/films:/data/films:ro`, `${MEDIA_PATH}/series:/data/series:ro` |
-
-**Points cles :**
-- Volumes media montes en lecture seule (`:ro`)
-- Token `PLEX_CLAIM` necessaire au premier demarrage (expire en 4 minutes)
-- Ulimits `nofile` : 65536 (soft et hard)
-- GPU passthrough possible (commante dans le compose)
-
-### 2. SFTP
+### 1. SFTP
 
 Serveur SFTP pour la reception des fichiers depuis le VPS.
 
@@ -365,9 +382,11 @@ Conteneurs connectes :
   +-- radarr
   +-- overseerr
   +-- homepage
+  +-- authelia
   +-- dozzle
   +-- notifiarr
   +-- byparr
+  +-- jackett
   +-- watchtower
 
 Conteneurs en mode host :
@@ -410,30 +429,35 @@ VPS (host)                                    Freebox Ultra
 
 ### Nginx reverse proxy
 
-Nginx tourne directement sur le host VPS (pas dans Docker). Il expose 6 sous-domaines via Cloudflare.
+Nginx tourne directement sur le host VPS (pas dans Docker). Il expose 9 sous-domaines via Cloudflare.
 
 ```
-Internet --> Cloudflare (proxy ON) --> VPS:443 --> nginx --> service local
+Internet --> Cloudflare (proxy ON) --> VPS:443 --> nginx --> Authelia (auth_request) --> service local
 ```
 
-| Sous-domaine | Service | Port local | BasicAuth |
+| Sous-domaine | Service | Port local | Authelia |
 |---|---|---|---|
-| `overseerr.DOMAIN` | Overseerr | 5055 | Non (auth interne) |
-| `sonarr.DOMAIN` | Sonarr | 8989 | Oui |
-| `radarr.DOMAIN` | Radarr | 7878 | Oui |
-| `prowlarr.DOMAIN` | Prowlarr | 9696 | Oui |
-| `qbittorrent.DOMAIN` | qBittorrent | 8080 | Oui |
-| `home.DOMAIN` | Homepage | 7575 | Oui |
+| `auth.DOMAIN` | Authelia | 9091 | — (portail lui-meme) |
+| `overseerr.DOMAIN` | Overseerr | 5055 | one_factor |
+| `sonarr.DOMAIN` | Sonarr | 8989 | two_factor (API exclue) |
+| `radarr.DOMAIN` | Radarr | 7878 | two_factor (API exclue) |
+| `prowlarr.DOMAIN` | Prowlarr | 9696 | two_factor |
+| `qbittorrent.DOMAIN` | qBittorrent | 8080 | two_factor |
+| `home.DOMAIN` | Homepage | 7575 | two_factor |
+| `logs.DOMAIN` | Dozzle | 9999 | two_factor |
+| `jackett.DOMAIN` | Jackett | 9117 | two_factor |
 
 **Configuration** (`vps/nginx/media-stack.conf.template`) :
 - Redirection HTTP 80 vers HTTPS 443 sur tous les vhosts
 - HTTP/2 active
 - Certificats SSL Cloudflare Origin (`/etc/ssl/cloudflare/cert.pem` + `key.pem`)
 - Protocoles : TLSv1.2 et TLSv1.3 uniquement
-- Headers de securite : HSTS, X-Frame-Options, X-Content-Type-Options
-- BasicAuth via `/etc/nginx/.htpasswd-media` (genere par `setup.sh`)
+- Ciphers : selection securisee, preference serveur
+- Headers de securite : HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy
+- Authelia SSO via `auth_request` directive nginx (snippets inclus dans chaque vhost)
 - Proxy headers : X-Real-IP, X-Forwarded-For, X-Forwarded-Proto
 - WebSocket support sur Overseerr et Homepage (Upgrade + Connection headers)
+- Endpoints `/api` de Sonarr et Radarr exclus de l'authentification Authelia (API key interne)
 
 ### Fail2ban
 
@@ -466,21 +490,21 @@ Utilisateur           Sonarr/Radarr         qBittorrent
      |
      |
 [4] IMPORT            [5] SYNC              [6] LECTURE
-Sonarr/Radarr          rclone                Plex
+Sonarr/Radarr          rclone                Player Freebox
      |                     |                     |
      v                     v                     v
- Sonarr/Radarr      rclone move            Plex detecte
- (detecte fichier    films/ et series/      les nouveaux
-  complet, renomme   separement --> freebox fichiers et
-  et deplace vers    via SFTP sur tunnel    les rend
-  /media/            WireGuard              disponibles
-  films/ ou          (toutes les 1 min)     en 4K direct
-  series/)                                  play
+ Sonarr/Radarr      rclone move            Le player Freebox
+ (detecte fichier    films/ et series/      lit directement
+  complet, renomme   separement --> freebox les fichiers sur
+  et deplace vers    via SFTP sur tunnel    le NVMe interne
+  /media/            WireGuard              en 4K direct
+  films/ ou          (toutes les 1 min)     play
+  series/)
 ```
 
 ### Detail de chaque etape
 
-**1. Demande** — L'utilisateur accede a Overseerr (`overseerr.DOMAIN`) et demande un film ou une serie. Overseerr transmet la demande a Radarr (films) ou Sonarr (series).
+**1. Demande** — L'utilisateur accede a Overseerr (`overseerr.DOMAIN`) via Authelia (one_factor) et demande un film ou une serie. Overseerr transmet la demande a Radarr (films) ou Sonarr (series).
 
 **2. Recherche** — Sonarr ou Radarr interroge Prowlarr, qui agrege les resultats de multiples indexeurs torrent. Le meilleur torrent est selectionne selon les profils de qualite (ex: 4K FR, priorite aux Remux).
 
@@ -490,7 +514,7 @@ Sonarr/Radarr          rclone                Plex
 
 **5. Synchronisation** — Le conteneur rclone, en boucle toutes les minutes, deplace (`rclone move`) les films et series separement vers la Freebox via SFTP sur le tunnel WireGuard. Les fichiers partiels (`*.part`, `*.!qB`) sont exclus. Les repertoires source vides sont supprimes (`--delete-empty-src-dirs`).
 
-**6. Lecture** — Plex sur la Freebox detecte automatiquement les nouveaux fichiers sur le stockage NVMe (montes en lecture seule). Le contenu est disponible en 4K direct play sur le reseau local.
+**6. Lecture** — Le player integre de la Freebox Ultra lit directement les fichiers sur le stockage NVMe interne. Le contenu est disponible en 4K direct play sur le reseau local.
 
 ---
 
@@ -502,18 +526,19 @@ L'architecture applique une defense en profondeur avec plusieurs couches de prot
 
 ```
 Couche 1 : Cloudflare          IP VPS masquee, protection DDoS, proxy SSL
-Couche 2 : Nginx               HTTPS force, headers securite, BasicAuth
-Couche 3 : Fail2ban            Ban IP sur echecs SSH et BasicAuth
-Couche 4 : SSH durci           Port custom, password desactive, root desactive
-Couche 5 : VPN Mullvad         IP reelle jamais exposee pour les torrents
-Couche 6 : Tunnel WireGuard    Transferts VPS-Freebox chiffres, SFTP non expose
-Couche 7 : Docker hardened     no-new-privileges, logs limites, userland-proxy off
+Couche 2 : Nginx               HTTPS force, headers securite, auth_request → Authelia
+Couche 3 : Authelia SSO        Portail unique, one_factor ou two_factor selon service
+Couche 4 : Fail2ban            Ban IP sur echecs SSH et auth
+Couche 5 : SSH durci           Port custom, password desactive, root desactive
+Couche 6 : VPN Mullvad         IP reelle jamais exposee pour les torrents
+Couche 7 : Tunnel WireGuard    Transferts VPS-Freebox chiffres, SFTP non expose
+Couche 8 : Docker hardened     no-new-privileges, logs limites, userland-proxy off, socket :ro
 ```
 
 ### Isolation reseau
 
 - **qBittorrent** : aucune stack reseau propre, tout passe par Gluetun. Si le VPN tombe, le conteneur est totalement isole (kill switch natif).
-- **Ports internes** : tous lies a `127.0.0.1` (8080, 9696, 8989, 7878, 5055, 7575). Aucun service Docker n'est directement accessible depuis Internet.
+- **Ports internes** : tous lies a `127.0.0.1` (8080, 9696, 8989, 7878, 5055, 7575, 9091). Aucun service Docker n'est directement accessible depuis Internet.
 - **SFTP Freebox** : accessible uniquement via le tunnel WireGuard, pas d'exposition sur Internet.
 
 ### Conteneurs securises
@@ -522,8 +547,8 @@ Couche 7 : Docker hardened     no-new-privileges, logs limites, userland-proxy o
 |---|---|
 | `no-new-privileges:true` | Tous sauf Gluetun et Fail2ban |
 | `network_mode: service:gluetun` | qBittorrent (isolation VPN) |
-| Volumes `:ro` | rclone (source media), Plex (media), fail2ban (logs) |
-| Healthchecks | Gluetun (VPN actif), Prowlarr (API accessible) |
+| Volumes `:ro` | rclone (source media), fail2ban (logs), docker.sock |
+| Healthchecks | Gluetun (VPN actif), Prowlarr (API accessible), Authelia (API health) |
 
 ### Nginx et headers HTTP
 
@@ -531,13 +556,14 @@ Tous les vhosts appliquent :
 - `Strict-Transport-Security: max-age=31536000; includeSubDomains` (HSTS)
 - `X-Frame-Options: SAMEORIGIN` (protection clickjacking)
 - `X-Content-Type-Options: nosniff` (protection MIME sniffing)
+- `Referrer-Policy: strict-origin-when-cross-origin`
 - Redirection HTTP vers HTTPS systematique
 - TLSv1.2 et TLSv1.3 uniquement (pas de TLSv1.0/1.1)
+- `ssl_prefer_server_ciphers on` avec selection de ciphers securisee
 
 ### Authentification
 
-- **BasicAuth nginx** : fichier `.htpasswd-media` genere par `setup.sh` avec `htpasswd`. Protege Sonarr, Radarr, Prowlarr, qBittorrent et Homepage.
-- **Overseerr** : authentification interne (pas de BasicAuth, possede sa propre gestion d'utilisateurs).
+- **Authelia SSO** : portail unique d'authentification. Overseerr en one_factor, tous les services admin en two_factor (TOTP). Les endpoints `/api` de Sonarr et Radarr sont exclus pour la communication inter-services (authentification par API key).
 - **SFTP** : cle publique SSH uniquement, mot de passe desactive, sudo desactive.
 - **SSH VPS** : port custom (`SSH_PORT`), authentification par mot de passe desactivee, login root desactive.
 
@@ -548,4 +574,4 @@ Tous les vhosts appliquent :
 
 ### Donnees sensibles
 
-Toutes les valeurs sensibles (cles WireGuard, credentials, tokens) sont dans les fichiers `.env` qui ne sont jamais commites (`.gitignore`). Les fichiers versionnes ne contiennent que des templates avec des placeholders.
+Toutes les valeurs sensibles (cles WireGuard, credentials, tokens, secrets Authelia) sont dans les fichiers `.env` qui ne sont jamais commites (`.gitignore`). Les fichiers versionnes ne contiennent que des templates avec des placeholders.
