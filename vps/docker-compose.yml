@@ -288,7 +288,7 @@ services:
     ports:
       - "127.0.0.1:9999:8080"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8080/"]
+      test: ["CMD", "/dozzle", "healthcheck"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -341,7 +341,7 @@ services:
     ports:
       - "127.0.0.1:8192:8191"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8191/health"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8191/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -395,12 +395,6 @@ services:
       - WATCHTOWER_NOTIFICATION_URL=discord://${DISCORD_WATCHTOWER_WEBHOOK_TOKEN}@${DISCORD_WATCHTOWER_WEBHOOK_ID}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-    healthcheck:
-      test: ["CMD", "sh", "-c", "pgrep watchtower || exit 1"]
-      interval: 60s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
     security_opt:
       - "no-new-privileges:true"
     networks:
