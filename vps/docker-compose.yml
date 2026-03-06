@@ -276,6 +276,23 @@ services:
     restart: unless-stopped
 
   # ──────────────────────────────────────────────
+  # Bypass Cloudflare pour indexeurs (Prowlarr)
+  # ──────────────────────────────────────────────
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
+    environment:
+      - TZ=${TZ}
+      - LOG_LEVEL=info
+    ports:
+      - "127.0.0.1:8192:8191"
+    security_opt:
+      - "no-new-privileges:true"
+    networks:
+      - media_network
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────
   # Mise à jour automatique des images Docker
   # ──────────────────────────────────────────────
   watchtower:
