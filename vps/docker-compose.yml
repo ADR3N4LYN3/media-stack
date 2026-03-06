@@ -276,7 +276,31 @@ services:
     restart: unless-stopped
 
   # ──────────────────────────────────────────────
-  # Bypass Cloudflare pour indexeurs (Prowlarr)
+  # Indexeurs Cloudflare via Jackett (Torrent9, etc.)
+  # Prowlarr → Jackett → Byparr → site CF
+  # ──────────────────────────────────────────────
+  jackett:
+    image: linuxserver/jackett:latest
+    container_name: jackett
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - AUTO_UPDATE=true
+    volumes:
+      - ./config/jackett:/config
+    ports:
+      - "127.0.0.1:9117:9117"
+    depends_on:
+      - byparr
+    security_opt:
+      - "no-new-privileges:true"
+    networks:
+      - media_network
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────
+  # Bypass Cloudflare pour Jackett
   # ──────────────────────────────────────────────
   byparr:
     image: ghcr.io/thephaseless/byparr:latest
