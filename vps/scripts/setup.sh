@@ -105,6 +105,7 @@ CONFIG_DIRS=(
     "radarr"
     "overseerr"
     "homepage"
+    "jackett"
     "qbittorrent/custom-services.d"
 )
 
@@ -382,6 +383,7 @@ printf "  ${GREEN}%-15s${NC} %s\n" "Sonarr"      "https://sonarr.${DOMAIN}"
 printf "  ${GREEN}%-15s${NC} %s\n" "Radarr"      "https://radarr.${DOMAIN}"
 printf "  ${GREEN}%-15s${NC} %s\n" "Prowlarr"    "https://prowlarr.${DOMAIN}"
 printf "  ${GREEN}%-15s${NC} %s\n" "qBittorrent" "https://qbittorrent.${DOMAIN}"
+printf "  ${GREEN}%-15s${NC} %s\n" "Jackett"     "https://jackett.${DOMAIN}"
 echo ""
 echo "  Prochaine étape : Prowlarr → Sonarr/Radarr → Overseerr → Homepage"
 echo ""
