@@ -20,3 +20,20 @@ services:
       - ./config/sftp:/config
       - ${MEDIA_PATH}:/data
     restart: unless-stopped
+
+  # ──────────────────────────────────────────────
+  # Jellyfin — Serveur média (lecture locale + streaming distant)
+  # Accessible en LAN pour le Player Devialet et via tunnel WireGuard
+  # ──────────────────────────────────────────────
+  jellyfin:
+    image: jellyfin/jellyfin:latest
+    container_name: jellyfin
+    environment:
+      - TZ=${TZ}
+    volumes:
+      - ./config/jellyfin:/config
+      - ./config/jellyfin/cache:/cache
+      - ${MEDIA_PATH}:/media:ro
+    ports:
+      - "8096:8096"
+    restart: unless-stopped
