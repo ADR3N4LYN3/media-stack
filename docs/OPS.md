@@ -22,7 +22,7 @@ Guide operationnel pour la maintenance, le monitoring et le depannage de la medi
 
 ```bash
 # Status de tous les conteneurs
-cd /opt/media-stack/vps && docker compose ps
+cd /home/adr3bot/bot/media-stack/vps && docker compose ps
 
 # Logs d'un service (temps reel)
 docker logs -f sonarr
@@ -98,7 +98,8 @@ docker exec fail2ban fail2ban-client set sshd banip <IP>
 ```bash
 # Espace disque
 df -h
-du -sh /data/downloads/* /data/media/*
+df -h /mnt/HC_Volume_104978745
+du -sh /mnt/HC_Volume_104978745/downloads/* /mnt/HC_Volume_104978745/media/*
 
 # Processus
 htop
@@ -155,7 +156,7 @@ Si `latest handshake` est absent ou superieur a 5 minutes, le tunnel est down.
 ### Verifier la sync rclone
 
 ```bash
-# Logs du conteneur rclone (sync toutes les 5 min)
+# Logs du conteneur rclone (move toutes les minutes)
 docker logs rclone --tail 50
 
 # Verifier la derniere sync reussie
@@ -183,9 +184,12 @@ docker compose ps --format "table {{.Name}}\t{{.Status}}" | grep -i restarting
 | sonarr | 8989 | Non |
 | radarr | 7878 | Non |
 | overseerr | 5055 | Non |
-| homarr | 7575 | Non |
+| homepage | 7575 | Non |
 | rclone | - | Non |
 | fail2ban | host | Non |
+| dozzle | 9999 | Non |
+| notifiarr | 5454 | Non |
+| byparr | 8192 | Non |
 | watchtower | - | Non |
 
 ### Verifier fail2ban
@@ -222,7 +226,7 @@ docker exec watchtower /watchtower --run-once
 **Manuelle** :
 
 ```bash
-cd /opt/media-stack/vps
+cd /home/adr3bot/bot/media-stack/vps
 
 # Mettre a jour toutes les images
 docker compose pull
@@ -279,18 +283,20 @@ journalctl --vacuum-time=7d
 ### Nettoyage espace disque
 
 ```bash
+# Verifier le volume Hetzner
+df -h /mnt/HC_Volume_104978745
+
 # Voir ce qui prend de la place
-du -sh /data/downloads/* /data/media/*
-df -h /data
+du -sh /mnt/HC_Volume_104978745/downloads/* /mnt/HC_Volume_104978745/media/*
 
 # Nettoyer les telechargements incomplets
-rm -rf /data/downloads/incomplete/*
+rm -rf /mnt/HC_Volume_104978745/downloads/incomplete/*
 
 # Nettoyer Docker (images, conteneurs arretes, volumes orphelins)
 docker system prune -af --volumes
 
 # Voir les plus gros fichiers dans downloads
-find /data/downloads -type f -size +1G -exec ls -lh {} \; | sort -k5 -h
+find /mnt/HC_Volume_104978745/downloads -type f -size +1G -exec ls -lh {} \; | sort -k5 -h
 ```
 
 ### Renouvellement certificats SSL Cloudflare
@@ -318,14 +324,14 @@ Pour renouveler la cle WireGuard Mullvad (utilisee par Gluetun pour les torrents
 2. Mettre a jour le `.env` du VPS :
 
 ```bash
-nano /opt/media-stack/vps/.env
+nano /home/adr3bot/bot/media-stack/vps/.env
 # Modifier WIREGUARD_PRIVATE_KEY et WIREGUARD_ADDRESSES
 ```
 
 3. Redemarrer Gluetun :
 
 ```bash
-cd /opt/media-stack/vps && docker compose restart gluetun
+cd /home/adr3bot/bot/media-stack/vps && docker compose restart gluetun
 ```
 
 4. Verifier que le VPN fonctionne :
@@ -347,17 +353,17 @@ docker exec gluetun wget -qO- https://ipinfo.io/json
 ```bash
 docker logs rclone --tail 20
 # Verifier que known_hosts existe
-ls -la /opt/media-stack/vps/config/rclone/known_hosts
+ls -la /home/adr3bot/bot/media-stack/vps/config/rclone/known_hosts
 ```
 
 **Solution** :
 
 ```bash
 # Rescanner la cle hote SFTP de la Freebox
-ssh-keyscan -p 2222 -H <FREEBOX_WG_IP> > /opt/media-stack/vps/config/rclone/known_hosts
+ssh-keyscan -p 2222 -H <FREEBOX_WG_IP> > /home/adr3bot/bot/media-stack/vps/config/rclone/known_hosts
 
 # Redemarrer rclone
-cd /opt/media-stack/vps && docker compose restart rclone
+cd /home/adr3bot/bot/media-stack/vps && docker compose restart rclone
 ```
 
 Causes possibles :
@@ -399,8 +405,8 @@ docker compose ps gluetun
 ```bash
 docker logs qbittorrent --tail 30
 # Verifier les permissions
-ls -la /data/downloads/
-chown -R 1000:1000 /data/downloads
+ls -la /mnt/HC_Volume_104978745/downloads/
+chown -R 1000:1000 /mnt/HC_Volume_104978745/downloads
 ```
 
 ---
@@ -417,7 +423,7 @@ wg show wg-freebox
 ping -c 3 <FREEBOX_WG_IP>
 
 # 2. Tester le SFTP manuellement
-ssh -p 2222 -i /opt/media-stack/vps/config/rclone/id_rsa mediastack@<FREEBOX_WG_IP>
+ssh -p 2222 -i /home/adr3bot/bot/media-stack/vps/config/rclone/id_rsa mediastack@<FREEBOX_WG_IP>
 
 # 3. Verifier les logs rclone
 docker logs rclone --tail 30
@@ -430,7 +436,7 @@ docker logs rclone --tail 30
 | Tunnel WireGuard down | `wg-quick down wg-freebox && wg-quick up wg-freebox` |
 | SFTP inaccessible | Verifier que le conteneur `sftp` tourne sur la Freebox |
 | Cle SSH invalide | Recopier la cle publique dans `freebox/config/sftp/ssh/authorized_key` |
-| Permissions | `chown -R 1000:1000 /data/media` sur le VPS |
+| Permissions | `chown -R 1000:1000 /mnt/HC_Volume_104978745/media` sur le VPS |
 
 ---
 
@@ -446,7 +452,7 @@ docker compose ps <service>
 
 # 2. Tester le port local
 curl -s http://127.0.0.1:<port>
-# Ports : sonarr=8989, radarr=7878, prowlarr=9696, overseerr=5055, homarr=7575, qbittorrent=8080
+# Ports : sonarr=8989, radarr=7878, prowlarr=9696, overseerr=5055, homepage=7575 (->3000), qbittorrent=8080
 
 # 3. Tester la config nginx
 nginx -t
@@ -491,7 +497,7 @@ Pour eviter que ca se reproduise, on peut whitelister son IP :
 
 ```bash
 # Editer jail.local
-nano /opt/media-stack/vps/fail2ban/jail.local
+nano /home/adr3bot/bot/media-stack/vps/fail2ban/jail.local
 # Ajouter sous [DEFAULT] :
 # ignoreip = 127.0.0.1/8 <MON_IP>
 
@@ -509,11 +515,11 @@ docker compose restart fail2ban
 
 ```bash
 # Sur la Freebox, verifier que les fichiers sont presents
-ls -la /data/media/films/
-ls -la /data/media/series/
+ls -la /mnt/HC_Volume_104978745/media/films/
+ls -la /mnt/HC_Volume_104978745/media/series/
 
 # Verifier les permissions
-stat /data/media/films/<un_fichier>
+stat /mnt/HC_Volume_104978745/media/films/<un_fichier>
 
 # Verifier les montages du conteneur Plex
 docker inspect plex | grep -A5 Mounts
@@ -523,7 +529,7 @@ docker inspect plex | grep -A5 Mounts
 
 1. **Fichiers absents** : la sync rclone n'a pas fonctionne -- voir [Sync ne fonctionne pas](#sync-ne-fonctionne-pas)
 2. **Fichiers presents mais invisibles dans Plex** :
-   - Verifier les permissions : `chown -R 1000:1000 /data/media`
+   - Verifier les permissions : `chown -R 1000:1000 /mnt/HC_Volume_104978745/media`
    - Les volumes Plex sont montes en `:ro` -- verifier que les chemins correspondent (`/data/films` et `/data/series` dans le conteneur)
    - Lancer un scan de bibliotheque dans Plex : Parametres -- Bibliotheques -- Scanner
 3. **Sync incomplete** : verifier les logs rclone, les fichiers `.part` ou `.!qB` sont exclus de la sync
@@ -537,15 +543,15 @@ docker inspect plex | grep -A5 Mounts
 **Diagnostic** :
 
 ```bash
-df -h
-du -sh /data/downloads/* /data/media/* /var/lib/docker/*
+df -h /mnt/HC_Volume_104978745
+du -sh /mnt/HC_Volume_104978745/downloads/* /mnt/HC_Volume_104978745/media/* /var/lib/docker/*
 ```
 
 **Solution** :
 
 ```bash
 # 1. Nettoyer les telechargements incomplets
-rm -rf /data/downloads/incomplete/*
+rm -rf /mnt/HC_Volume_104978745/downloads/incomplete/*
 
 # 2. Supprimer les fichiers seedees termines (verifier d'abord dans qBittorrent)
 # Ne supprimer QUE les fichiers qui ont ete synces vers la Freebox
@@ -557,7 +563,7 @@ docker system prune -af --volumes
 journalctl --vacuum-time=3d
 
 # 5. Trouver les plus gros fichiers
-find /data -type f -size +1G -exec ls -lh {} \; 2>/dev/null | sort -k5 -h
+find /mnt/HC_Volume_104978745 -type f -size +1G -exec ls -lh {} \; 2>/dev/null | sort -k5 -h
 ```
 
 ---
@@ -614,7 +620,7 @@ nginx -t
 
 ```bash
 # Regenerer le htpasswd
-source /opt/media-stack/vps/.env
+source /home/adr3bot/bot/media-stack/vps/.env
 htpasswd -bc /etc/nginx/.htpasswd-media "$NGINX_USER" "$NGINX_PASSWORD"
 chmod 640 /etc/nginx/.htpasswd-media
 chown root:www-data /etc/nginx/.htpasswd-media
@@ -633,14 +639,14 @@ Causes possibles :
 
 ## 5. Sync avancee (sync-watch.sh)
 
-Le script `vps/scripts/sync-watch.sh` offre une alternative a la sync rclone en boucle (toutes les 5 min). Il utilise `inotify` pour detecter les nouveaux fichiers en temps reel.
+Le script `vps/scripts/sync-watch.sh` offre une alternative a la sync rclone en boucle (toutes les minutes). Il utilise `inotify` pour detecter les nouveaux fichiers en temps reel.
 
 ### Differences avec le conteneur rclone
 
 | | Conteneur rclone | sync-watch.sh |
 |---|---|---|
-| Methode | Boucle `rclone sync` toutes les 5 min | Detection inotify + sync fichier par fichier |
-| Latence | Jusqu'a 5 min | Quasi instantanee (+ 30s stabilisation) |
+| Methode | Boucle `rclone move` toutes les minutes | Detection inotify + sync fichier par fichier |
+| Latence | Jusqu'a 1 min | Quasi instantanee (+ 30s stabilisation) |
 | Execution | Conteneur Docker | Script sur le host |
 | Fallback | - | Sync complete toutes les heures |
 | Retry | Aucun | 3 tentatives avec backoff (10s, 30s, 90s) |
@@ -653,7 +659,7 @@ Le script `vps/scripts/sync-watch.sh` offre une alternative a la sync rclone en 
 apt install inotify-tools
 
 # Lancer en arriere-plan
-cd /opt/media-stack/vps
+cd /home/adr3bot/bot/media-stack/vps
 nohup bash scripts/sync-watch.sh &
 
 # Ou creer un service systemd
@@ -664,7 +670,7 @@ After=network.target docker.service
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/media-stack/vps
+WorkingDirectory=/home/adr3bot/bot/media-stack/vps
 ExecStart=/bin/bash scripts/sync-watch.sh
 Restart=always
 RestartSec=10
@@ -679,7 +685,7 @@ systemctl enable --now sync-watch
 
 ### Configuration inotify
 
-Le script surveille `/data/media` recursivement pour les evenements `close_write` et `moved_to`. Les fichiers temporaires (`.part`, `.tmp`, `.!qB`, `~`) sont ignores.
+Le script surveille `/mnt/HC_Volume_104978745/media` recursivement pour les evenements `close_write` et `moved_to`. Les fichiers temporaires (`.part`, `.tmp`, `.!qB`, `~`) sont ignores.
 
 Si le nombre de fichiers est important, augmenter la limite inotify :
 
@@ -722,14 +728,15 @@ grep "webhook\|FAILED" /var/log/rclone-sync.log
 | Config Prowlarr | `vps/config/prowlarr/` | Indexeurs configures |
 | Config Overseerr | `vps/config/overseerr/` | Utilisateurs, demandes |
 | Config qBittorrent | `vps/config/qbittorrent/` | Torrents actifs, preferences |
-| Config Homarr | `vps/config/homarr/` | Dashboard personnalise |
+| Config Homepage | `vps/config/homepage/` | Dashboard personnalise |
+| Config Notifiarr | `vps/config/notifiarr/` | Notifications et integrations |
 | Certificats SSL | `/etc/ssl/cloudflare/` | Certificats origin Cloudflare |
 | htpasswd | `/etc/nginx/.htpasswd-media` | Authentification nginx |
 
 ### Ce qu'il ne faut PAS sauvegarder
 
-- `/data/downloads/` -- fichiers temporaires de telechargement, volumineux et reproductibles
-- `/data/media/` -- media synces, reproductibles depuis les sources
+- `/mnt/HC_Volume_104978745/downloads/` -- fichiers temporaires de telechargement, volumineux et reproductibles
+- `/mnt/HC_Volume_104978745/media/` -- media synces, reproductibles depuis les sources
 - `/var/lib/docker/` -- runtime Docker, recree automatiquement
 - `vps/config/gluetun/` -- cache Gluetun, recree au demarrage
 - `fail2ban_data` volume -- base de bans, ephemere
@@ -744,23 +751,25 @@ set -euo pipefail
 BACKUP_DIR="/root/backups/media-stack"
 DATE=$(date +%Y-%m-%d_%H%M)
 BACKUP_FILE="${BACKUP_DIR}/media-stack-${DATE}.tar.gz"
-PROJECT_DIR="/opt/media-stack"
+PROJECT_DIR="/home/adr3bot/bot/media-stack"
+VOLUME="/mnt/HC_Volume_104978745"
 
 mkdir -p "$BACKUP_DIR"
 
 tar czf "$BACKUP_FILE" \
     -C / \
-    opt/media-stack/vps/.env \
-    opt/media-stack/freebox/.env \
-    opt/media-stack/vps/config/rclone/id_rsa \
-    opt/media-stack/vps/config/rclone/id_rsa.pub \
-    opt/media-stack/vps/config/rclone/known_hosts \
-    opt/media-stack/vps/config/sonarr/ \
-    opt/media-stack/vps/config/radarr/ \
-    opt/media-stack/vps/config/prowlarr/ \
-    opt/media-stack/vps/config/overseerr/ \
-    opt/media-stack/vps/config/qbittorrent/ \
-    opt/media-stack/vps/config/homarr/ \
+    home/adr3bot/bot/media-stack/vps/.env \
+    home/adr3bot/bot/media-stack/freebox/.env \
+    home/adr3bot/bot/media-stack/vps/config/rclone/id_rsa \
+    home/adr3bot/bot/media-stack/vps/config/rclone/id_rsa.pub \
+    home/adr3bot/bot/media-stack/vps/config/rclone/known_hosts \
+    home/adr3bot/bot/media-stack/vps/config/sonarr/ \
+    home/adr3bot/bot/media-stack/vps/config/radarr/ \
+    home/adr3bot/bot/media-stack/vps/config/prowlarr/ \
+    home/adr3bot/bot/media-stack/vps/config/overseerr/ \
+    home/adr3bot/bot/media-stack/vps/config/qbittorrent/ \
+    home/adr3bot/bot/media-stack/vps/config/homepage/ \
+    home/adr3bot/bot/media-stack/vps/config/notifiarr/ \
     etc/wireguard/wg-freebox.conf \
     etc/ssl/cloudflare/ \
     etc/nginx/.htpasswd-media \
@@ -792,7 +801,7 @@ echo "0 4 * * * /root/backup-media-stack.sh >> /var/log/backup-media-stack.log 2
 
 ```bash
 # 1. Couper les services pour limiter l'exposition
-cd /opt/media-stack/vps && docker compose down
+cd /home/adr3bot/bot/media-stack/vps && docker compose down
 
 # 2. Couper le tunnel WireGuard (proteger la Freebox)
 wg-quick down wg-freebox
@@ -817,7 +826,7 @@ docker logs fail2ban --tail 100
    - Cle WireGuard Mullvad
    - Cle WireGuard tunnel Freebox
    - Cle SSH rclone (regenerer + recopier sur la Freebox)
-   - Cle de chiffrement Homarr (`HOMARR_SECRET_KEY`)
+   - Cle de chiffrement Homepage
 5. Regenerer les certificats Cloudflare origin
 6. Verifier que la Freebox n'a pas ete affectee
 
@@ -880,7 +889,7 @@ nano /etc/wireguard/wg-freebox.conf
 # Modifier la ligne Endpoint = <NOUVELLE_IP>:<PORT>
 
 # Mettre a jour le .env aussi
-nano /opt/media-stack/vps/.env
+nano /home/adr3bot/bot/media-stack/vps/.env
 # Modifier WG_FREEBOX_ENDPOINT=<NOUVELLE_IP>
 ```
 

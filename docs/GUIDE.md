@@ -263,8 +263,8 @@ Voici chaque variable avec son explication detaillee :
 
 | Variable | Description | Valeur par defaut |
 |---|---|---|
-| `DOWNLOADS_PATH` | Repertoire de telechargement | `/data/downloads` |
-| `MEDIA_PATH` | Repertoire des medias tries | `/data/media` |
+| `DOWNLOADS_PATH` | Repertoire de telechargement (Hetzner Volume) | `/mnt/HC_Volume_104978745/downloads` |
+| `MEDIA_PATH` | Repertoire des medias tries (Hetzner Volume) | `/mnt/HC_Volume_104978745/media` |
 
 #### VPN Mullvad WireGuard (pour les torrents)
 
@@ -309,19 +309,24 @@ Ces valeurs viennent du **fichier .conf telecharge a l'etape 2.2** :
 | `NGINX_USER` | Utilisateur pour l'authentification basique | `admin` |
 | `NGINX_PASSWORD` | Mot de passe pour l'authentification basique | `UnMotDePasseSecure123!` |
 
-#### Homarr
+#### Homepage (Dashboard)
 
-| Variable | Description | Comment generer |
+| Variable | Description | Exemple |
 |---|---|---|
-| `HOMARR_SECRET_KEY` | Cle de chiffrement (64 caracteres hex) | `openssl rand -hex 32` |
+| `HOMEPAGE_USER` | Utilisateur pour le dashboard | `admin` |
+| `HOMEPAGE_PASSWORD` | Mot de passe pour le dashboard | `UnMotDePasseSecure123!` |
+| `HOMEPAGE_RADARR_KEY` | Cle API Radarr pour Homepage | Copier depuis Radarr > Settings > General |
+| `HOMEPAGE_SONARR_KEY` | Cle API Sonarr pour Homepage | Copier depuis Sonarr > Settings > General |
+| `HOMEPAGE_PROWLARR_KEY` | Cle API Prowlarr pour Homepage | Copier depuis Prowlarr > Settings > General |
+| `HOMEPAGE_OVERSEERR_KEY` | Cle API Overseerr pour Homepage | Copier depuis Overseerr > Settings > General |
 
-Pour generer la cle :
+#### Notifications
 
-```bash
-openssl rand -hex 32
-```
-
-Copier le resultat dans `HOMARR_SECRET_KEY`.
+| Variable | Description | Exemple |
+|---|---|---|
+| `DISCORD_WEBHOOK_ID` | ID webhook Discord pour Watchtower | Partie ID de l'URL webhook Discord |
+| `DISCORD_WEBHOOK_TOKEN` | Token webhook Discord pour Watchtower | Partie token de l'URL webhook Discord |
+| `NOTIFIARR_API_KEY` | Cle API Notifiarr pour les notifications | Copier depuis notifiarr.com |
 
 #### SSH et divers
 
@@ -338,8 +343,8 @@ PUID=1000
 PGID=1000
 TZ=Europe/Paris
 
-DOWNLOADS_PATH=/data/downloads
-MEDIA_PATH=/data/media
+DOWNLOADS_PATH=/mnt/HC_Volume_104978745/downloads
+MEDIA_PATH=/mnt/HC_Volume_104978745/media
 
 WIREGUARD_PRIVATE_KEY=maClePriveeMullvadIciEnBase64=
 WIREGUARD_ADDRESSES=10.66.123.45/32
@@ -359,12 +364,19 @@ DOMAIN=media.exemple.fr
 NGINX_USER=admin
 NGINX_PASSWORD=UnMotDePasseSecure123!
 
-HOMARR_SECRET_KEY=a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2
+HOMEPAGE_USER=admin
+HOMEPAGE_PASSWORD=UnMotDePasseSecure123!
+HOMEPAGE_RADARR_KEY=votreCleApiRadarr
+HOMEPAGE_SONARR_KEY=votreCleApiSonarr
+HOMEPAGE_PROWLARR_KEY=votreCleApiProwlarr
+HOMEPAGE_OVERSEERR_KEY=votreCleApiOverseerr
+
+DISCORD_WEBHOOK_ID=123456789
+DISCORD_WEBHOOK_TOKEN=votreTokenWebhook
+NOTIFIARR_API_KEY=votreCleApiNotifiarr
 
 SSH_PORT=2222
 PORT_QBITTORRENT=8080
-
-WEBHOOK_URL=
 ```
 
 ### 3.3 Lancer le script d'installation
@@ -512,8 +524,11 @@ Dans la console Hetzner Cloud, configurer le firewall avec ces regles :
 | **Sonarr** | 8989 | Gestionnaire de series TV |
 | **Radarr** | 7878 | Gestionnaire de films |
 | **Overseerr** | 5055 | Interface de demande utilisateur |
-| **Homarr** | 7575 | Dashboard de monitoring |
-| **rclone** | - | Synchronisation VPS vers Freebox (toutes les 5 min) |
+| **Homepage** | 3000 | Dashboard de monitoring |
+| **Dozzle** | 9999 | Visualiseur de logs Docker |
+| **Notifiarr** | 5454 | Notifications Discord (Sonarr/Radarr/Prowlarr) |
+| **Byparr** | 8192 | Bypass Cloudflare pour indexeurs Prowlarr |
+| **rclone** | - | Synchronisation VPS vers Freebox (toutes les minutes) |
 | **Fail2ban** | - | Protection brute-force SSH et nginx |
 | **Watchtower** | - | Mise a jour automatique des images Docker (3h du matin) |
 
@@ -550,6 +565,17 @@ Pour chaque indexeur :
 3. Configurer les eventuels identifiants
 4. Cliquer sur **Test** pour verifier que ca fonctionne
 5. Sauvegarder
+
+**Configurer le proxy Byparr (pour les indexeurs derriere Cloudflare)** :
+
+Si certains indexeurs sont proteges par Cloudflare, il faut configurer Byparr comme proxy :
+
+1. Aller dans **Settings** > **Indexer Proxies**
+2. Ajouter un nouveau proxy de type **FlareSolverr**
+3. URL : `http://byparr:8191`
+4. Tag : `flaresolverr`
+5. Sauvegarder
+6. Appliquer le tag `flaresolverr` sur les indexeurs concernes
 
 **Configurer la synchronisation avec Sonarr et Radarr** :
 
@@ -654,20 +680,23 @@ Acceder a `https://overseerr.DOMAIN`.
 
 4. **Configurer les utilisateurs** : dans **Settings** > **Users**, definir les permissions pour les utilisateurs qui pourront faire des demandes
 
-### 4.5 Homarr - Dashboard
+### 4.5 Homepage - Dashboard
 
 Acceder a `https://home.DOMAIN`.
 
-Homarr sert de tableau de bord centralise pour acceder rapidement a tous les services.
+Homepage sert de tableau de bord centralise pour acceder rapidement a tous les services.
 
 **Configuration** :
 
-1. Creer un compte administrateur
-2. Ajouter des widgets pour chaque service :
-   - Cliquer sur **+** pour ajouter un widget
-   - Pour chaque service (Sonarr, Radarr, Overseerr...), ajouter un widget avec :
-     - L'URL interne du service
-     - La cle API (disponible dans Settings > General de chaque service)
+Homepage se configure via des fichiers YAML dans le repertoire `config/homepage/` :
+
+- **`services.yaml`** : definition des services affiches sur le dashboard (Sonarr, Radarr, Overseerr, qBittorrent, etc.)
+- **`widgets.yaml`** : widgets d'information (systeme, recherche, etc.)
+- **`settings.yaml`** : parametres generaux du dashboard (titre, theme, layout, etc.)
+
+Les cles API des services sont passees en variables d'environnement (`HOMEPAGE_RADARR_KEY`, `HOMEPAGE_SONARR_KEY`, etc.) et referencees dans les fichiers YAML.
+
+> **Note** : Homepage n'a pas d'authentification interne. L'acces est protege par l'authentification basique nginx (`NGINX_USER` / `NGINX_PASSWORD`).
 
 ### 4.6 Plex - Serveur de streaming
 
@@ -727,7 +756,7 @@ Plusieurs endroits pour suivre l'avancement :
 
 La synchronisation VPS vers Freebox se fait automatiquement :
 
-- **Conteneur rclone** : sync automatique toutes les **5 minutes**
+- **Conteneur rclone** : sync automatique toutes les **minutes**
 - **sync-watch.sh** (optionnel) : detection en temps reel via inotify
 
 Pour verifier manuellement :
@@ -793,7 +822,7 @@ Le resultat doit montrer une IP Mullvad (pas l'IP de ton VPS).
 docker logs rclone --tail 20
 ```
 
-4. Attendre le prochain cycle de sync (max 5 min) ou verifier que le fichier est synchronise
+4. Attendre le prochain cycle de sync (max 1 min) ou verifier que le fichier est synchronise
 
 ### Etape 5 : Verifier dans Plex
 

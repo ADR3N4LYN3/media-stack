@@ -19,7 +19,7 @@ Documentation detaillee de l'architecture du projet media-stack : infrastructure
 
 L'architecture repose sur deux noeuds physiques relies par un tunnel WireGuard chiffre :
 
-- **VPS Hetzner AX22** (Helsinki) : telechargement automatise derriere VPN Mullvad, gestion des medias, reverse proxy HTTPS
+- **VPS Hetzner AX22** (Helsinki) : telechargement automatise derriere VPN Mullvad, gestion des medias, reverse proxy HTTPS. Stockage sur Hetzner Volume 250GB monte a `/mnt/HC_Volume_104978745` (`DOWNLOADS_PATH=/mnt/HC_Volume_104978745/downloads`, `MEDIA_PATH=/mnt/HC_Volume_104978745/media`)
 - **Freebox Ultra** (domicile) : stockage NVMe interne, lecture Plex 4K direct play
 
 ```
@@ -35,7 +35,10 @@ L'architecture repose sur deux noeuds physiques relies par un tunnel WireGuard c
     |              [nginx reverse proxy]                     |
     |             /    |    |    |    \                       |
     |            /     |    |    |     \                      |
-    |     overseerr sonarr radarr prowlarr homarr            |
+    |     overseerr sonarr radarr prowlarr homepage           |
+    |         |        |    |       |    dozzle              |
+    |         |        |    |       |    notifiarr            |
+    |         |        |    |       |    byparr               |
     |         |        |    |       |                         |
     |         +--------+----+-------+                        |
     |                  |                                     |
@@ -55,7 +58,7 @@ L'architecture repose sur deux noeuds physiques relies par un tunnel WireGuard c
     |                          [sftp] <--- port 2222         |
     |                            |                           |
     |                     NVMe interne                       |
-    |                    /data/media/                         |
+                    /data/media/                         |
     |                   +-- films/                            |
     |                   +-- series/                           |
     |                            |                           |
@@ -78,6 +81,10 @@ L'architecture repose sur deux noeuds physiques relies par un tunnel WireGuard c
 | Gluetun | VPS | Tunnel VPN Mullvad WireGuard pour qBittorrent |
 | rclone | VPS | Synchronisation SFTP VPS vers Freebox |
 | Fail2ban | VPS | Protection brute-force SSH et nginx BasicAuth |
+| Homepage | VPS | Dashboard de monitoring centralise (widgets YAML) |
+| Dozzle | VPS | Visualiseur de logs Docker web |
+| Notifiarr | VPS | Notifications Discord (Sonarr/Radarr) |
+| Byparr | VPS | Bypass Cloudflare pour Prowlarr (remplace FlareSolverr) |
 | Watchtower | VPS | Mise a jour automatique des images Docker |
 | Plex | Freebox | Serveur media, lecture 4K direct play |
 | SFTP | Freebox | Reception des fichiers depuis le VPS |
@@ -86,7 +93,7 @@ L'architecture repose sur deux noeuds physiques relies par un tunnel WireGuard c
 
 ## Services Docker VPS
 
-Le VPS execute 10 conteneurs Docker definis dans `vps/docker-compose.yml`. Tous partagent le reseau `media_network` (sauf exceptions notees).
+Le VPS execute 14 conteneurs Docker definis dans `vps/docker-compose.yml`. Tous partagent le reseau `media_network` (sauf exceptions notees).
 
 ### 1. Gluetun
 
@@ -155,7 +162,7 @@ Gestion automatisee des series TV.
 | Image | `linuxserver/sonarr:latest` |
 | Ports | `127.0.0.1:8989:8989` |
 | Reseau | `media_network` |
-| Volumes | `./config/sonarr:/config`, `${DOWNLOADS_PATH}/complete:/downloads/complete`, `${MEDIA_PATH}/series:/tv` |
+| Volumes | `./config/sonarr:/config`, `${DOWNLOADS_PATH}:/downloads`, `${MEDIA_PATH}/series:/tv` |
 | Dependance | `prowlarr` (condition: `service_healthy`) |
 | Security | `no-new-privileges:true` |
 
@@ -168,7 +175,7 @@ Gestion automatisee des films.
 | Image | `linuxserver/radarr:latest` |
 | Ports | `127.0.0.1:7878:7878` |
 | Reseau | `media_network` |
-| Volumes | `./config/radarr:/config`, `${DOWNLOADS_PATH}/complete:/downloads/complete`, `${MEDIA_PATH}/films:/movies` |
+| Volumes | `./config/radarr:/config`, `${DOWNLOADS_PATH}:/downloads`, `${MEDIA_PATH}/films:/movies` |
 | Dependance | `prowlarr` (condition: `service_healthy`) |
 | Security | `no-new-privileges:true` |
 
@@ -186,19 +193,19 @@ Interface utilisateur pour les demandes de films et series.
 
 Overseerr est le seul service sans BasicAuth nginx (il possede sa propre authentification interne).
 
-### 7. Homarr
+### 7. Homepage
 
-Dashboard de monitoring centralise.
+Dashboard de monitoring centralise avec widgets YAML.
 
 | Propriete | Valeur |
 |---|---|
-| Image | `ghcr.io/homarr-labs/homarr:latest` |
-| Ports | `127.0.0.1:7575:7575` |
+| Image | `ghcr.io/gethomepage/homepage:latest` |
+| Ports | `127.0.0.1:7575:3000` |
 | Reseau | `media_network` |
-| Volumes | `./config/homarr/configs:/app/data/configs`, `./config/homarr/icons:/app/public/icons`, `./config/homarr/data:/data` |
+| Volumes | `./config/homepage:/app/config`, `/var/run/docker.sock:/var/run/docker.sock:ro`, `/mnt/HC_Volume_104978745:/mnt/HC_Volume_104978745:ro` |
 | Security | `no-new-privileges:true` |
 
-Necessite une cle de chiffrement (`HOMARR_SECRET_KEY`, 64 caracteres hex).
+Widgets configures : search (Overseerr), resources (CPU/RAM/disk systeme + volume Hetzner), datetime.
 
 ### 8. rclone
 
@@ -215,9 +222,9 @@ Synchronisation automatique des medias du VPS vers la Freebox via SFTP sur tunne
 | Security | `no-new-privileges:true` |
 
 **Fonctionnement :**
-- Boucle toutes les 5 minutes (300 secondes)
-- Commande : `rclone sync /source freebox:${FREEBOX_MEDIA_PATH}`
-- Parametres : 4 transferts, 8 checkers, 4 multi-thread streams, buffer 64M
+- Boucle toutes les 1 minute (60 secondes)
+- Commande : `rclone move` (deux commandes separees pour films et series)
+- Parametres : 2 transferts, 8 checkers, buffer 64M, `--delete-empty-src-dirs`
 - Exclusions : `*.part`, `*.!qB` (fichiers en cours de telechargement)
 - Authentification : cle SSH privee montee en lecture seule
 
@@ -225,7 +232,6 @@ Synchronisation automatique des medias du VPS vers la Freebox via SFTP sur tunne
 - Remote `freebox` de type SFTP
 - Connexion via IP WireGuard de la Freebox, port 2222
 - Authentification par cle SSH
-- Chunk size : 32M, concurrency : 4
 
 ### 9. Fail2ban
 
@@ -265,7 +271,42 @@ Mise a jour automatique des images Docker.
 - Planification : tous les jours a 3h00 (`0 0 3 * * *`)
 - Nettoyage des anciennes images : actif
 - Conteneurs arretes ignores
-- Notifications Slack/Discord optionnelles via webhook
+- Notifications Discord via Shoutrrr (`discord://${DISCORD_WEBHOOK_TOKEN}@${DISCORD_WEBHOOK_ID}`)
+
+### 11. Dozzle
+
+Visualiseur de logs Docker en temps reel via interface web.
+
+| Propriete | Valeur |
+|---|---|
+| Image | `amir20/dozzle:latest` |
+| Ports | `127.0.0.1:9999:8080` |
+| Reseau | `media_network` |
+| Volumes | `/var/run/docker.sock:/var/run/docker.sock:ro` |
+
+### 12. Notifiarr
+
+Notifications Discord pour les evenements Sonarr et Radarr.
+
+| Propriete | Valeur |
+|---|---|
+| Image | `golift/notifiarr:latest` |
+| Ports | `127.0.0.1:5454:5454` |
+| Reseau | `media_network` |
+| Volumes | `./config/notifiarr:/config`, `/var/run/docker.sock:/var/run/docker.sock:ro` |
+| Env | `DN_API_KEY=${NOTIFIARR_API_KEY}` |
+
+### 13. Byparr
+
+Bypass Cloudflare pour les indexeurs Prowlarr (remplace FlareSolverr).
+
+| Propriete | Valeur |
+|---|---|
+| Image | `ghcr.io/thephaseless/byparr:latest` |
+| Ports | `127.0.0.1:8192:8191` |
+| Reseau | `media_network` |
+
+Utilise par Prowlarr comme proxy pour les indexeurs proteges par Cloudflare.
 
 ---
 
@@ -323,7 +364,10 @@ Conteneurs connectes :
   +-- sonarr
   +-- radarr
   +-- overseerr
-  +-- homarr
+  +-- homepage
+  +-- dozzle
+  +-- notifiarr
+  +-- byparr
   +-- watchtower
 
 Conteneurs en mode host :
@@ -379,7 +423,7 @@ Internet --> Cloudflare (proxy ON) --> VPS:443 --> nginx --> service local
 | `radarr.DOMAIN` | Radarr | 7878 | Oui |
 | `prowlarr.DOMAIN` | Prowlarr | 9696 | Oui |
 | `qbittorrent.DOMAIN` | qBittorrent | 8080 | Oui |
-| `home.DOMAIN` | Homarr | 7575 | Oui |
+| `home.DOMAIN` | Homepage | 7575 | Oui |
 
 **Configuration** (`vps/nginx/media-stack.conf.template`) :
 - Redirection HTTP 80 vers HTTPS 443 sur tous les vhosts
@@ -389,7 +433,7 @@ Internet --> Cloudflare (proxy ON) --> VPS:443 --> nginx --> service local
 - Headers de securite : HSTS, X-Frame-Options, X-Content-Type-Options
 - BasicAuth via `/etc/nginx/.htpasswd-media` (genere par `setup.sh`)
 - Proxy headers : X-Real-IP, X-Forwarded-For, X-Forwarded-Proto
-- WebSocket support sur Overseerr et Homarr (Upgrade + Connection headers)
+- WebSocket support sur Overseerr et Homepage (Upgrade + Connection headers)
 
 ### Fail2ban
 
@@ -425,12 +469,12 @@ Utilisateur           Sonarr/Radarr         qBittorrent
 Sonarr/Radarr          rclone                Plex
      |                     |                     |
      v                     v                     v
- Sonarr/Radarr      rclone sync            Plex detecte
- (detecte fichier    /source --> freebox:   les nouveaux
-  complet, renomme   via SFTP sur tunnel    fichiers et
-  et deplace vers    WireGuard              les rend
-  /data/media/       (toutes les 5 min)     disponibles
-  films/ ou                                 en 4K direct
+ Sonarr/Radarr      rclone move            Plex detecte
+ (detecte fichier    films/ et series/      les nouveaux
+  complet, renomme   separement --> freebox fichiers et
+  et deplace vers    via SFTP sur tunnel    les rend
+  /media/            WireGuard              disponibles
+  films/ ou          (toutes les 1 min)     en 4K direct
   series/)                                  play
 ```
 
@@ -442,11 +486,11 @@ Sonarr/Radarr          rclone                Plex
 
 **3. Telechargement** — Sonarr/Radarr envoie le torrent a qBittorrent (accessible via `gluetun:8080` sur le reseau Docker). qBittorrent telecharge derriere le VPN Mullvad. Les fichiers transitent par `/downloads/incomplete` puis `/downloads/complete`.
 
-**4. Import** — Sonarr/Radarr detecte la fin du telechargement, renomme le fichier selon les conventions, et le deplace (hardlink ou copie) vers `/data/media/films/` ou `/data/media/series/`.
+**4. Import** — Sonarr/Radarr detecte la fin du telechargement, renomme le fichier selon les conventions, et le deplace (hardlink ou copie) vers `/mnt/HC_Volume_104978745/media/films/` ou `/mnt/HC_Volume_104978745/media/series/`.
 
-**5. Synchronisation** — Le conteneur rclone, en boucle toutes les 5 minutes, synchronise `/data/media/` (monte en lecture seule) vers la Freebox via SFTP sur le tunnel WireGuard. Les fichiers partiels (`*.part`, `*.!qB`) sont exclus.
+**5. Synchronisation** — Le conteneur rclone, en boucle toutes les minutes, deplace (`rclone move`) les films et series separement vers la Freebox via SFTP sur le tunnel WireGuard. Les fichiers partiels (`*.part`, `*.!qB`) sont exclus. Les repertoires source vides sont supprimes (`--delete-empty-src-dirs`).
 
-**6. Lecture** — Plex sur la Freebox detecte automatiquement les nouveaux fichiers sur le stockage NVMe (`/data/media/films/` et `/data/media/series/`, montes en lecture seule). Le contenu est disponible en 4K direct play sur le reseau local.
+**6. Lecture** — Plex sur la Freebox detecte automatiquement les nouveaux fichiers sur le stockage NVMe (montes en lecture seule). Le contenu est disponible en 4K direct play sur le reseau local.
 
 ---
 
@@ -492,7 +536,7 @@ Tous les vhosts appliquent :
 
 ### Authentification
 
-- **BasicAuth nginx** : fichier `.htpasswd-media` genere par `setup.sh` avec `htpasswd`. Protege Sonarr, Radarr, Prowlarr, qBittorrent et Homarr.
+- **BasicAuth nginx** : fichier `.htpasswd-media` genere par `setup.sh` avec `htpasswd`. Protege Sonarr, Radarr, Prowlarr, qBittorrent et Homepage.
 - **Overseerr** : authentification interne (pas de BasicAuth, possede sa propre gestion d'utilisateurs).
 - **SFTP** : cle publique SSH uniquement, mot de passe desactive, sudo desactive.
 - **SSH VPS** : port custom (`SSH_PORT`), authentification par mot de passe desactivee, login root desactive.
