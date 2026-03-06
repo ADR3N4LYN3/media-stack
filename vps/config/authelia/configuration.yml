@@ -1,7 +1,7 @@
 # ═══════════════════════════════════════════
 # Authelia — Configuration SSO Media Stack
 # ═══════════════════════════════════════════
-# Les secrets (jwt_secret, session.secret, storage.encryption_key)
+# Les secrets (identity_validation, session.secret, storage.encryption_key)
 # sont injectes via variables d'environnement AUTHELIA_*
 
 server:
