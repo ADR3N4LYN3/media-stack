@@ -46,6 +46,11 @@
           url: http://prowlarr:9696
           key: "{{HOMEPAGE_VAR_PROWLARR_KEY}}"
 
+    - Jackett:
+        icon: jackett.svg
+        href: https://jackett.{{HOMEPAGE_VAR_DOMAIN}}
+        description: Indexeurs Cloudflare (via Byparr)
+
 - Système:
     - Dozzle:
         icon: dozzle.svg
