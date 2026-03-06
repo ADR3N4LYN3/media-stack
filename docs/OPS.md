@@ -412,6 +412,59 @@ chown -R 1000:1000 ${DATA_PATH}/downloads
 
 ---
 
+### qBittorrent inaccessible apres restart Gluetun (502 Bad Gateway)
+
+**Symptome** : qBittorrent affiche `healthy` dans `docker compose ps` mais l'acces web retourne 502. `curl http://127.0.0.1:8080` retourne `000` (pas de reponse).
+
+**Cause** : qBittorrent utilise `network_mode: service:gluetun` (reseau partage). Quand Gluetun est redemarre seul, son stack reseau est recree mais qBittorrent garde l'ancien lien reseau casse. Le port 8080 n'est plus route.
+
+**Solution** :
+
+```bash
+# Toujours redemarrer qBittorrent apres Gluetun
+docker compose restart gluetun && sleep 10 && docker compose restart qbittorrent
+```
+
+> **Regle** : ne jamais redemarrer Gluetun seul. Toujours enchainer avec un restart de qBittorrent. Un `docker compose up -d` global ne pose pas ce probleme car Docker respecte l'ordre `depends_on`.
+
+---
+
+### qBittorrent config revient aux anciens chemins apres restart
+
+**Symptome** : les chemins `SavePath` et `TempPath` dans qBittorrent reviennent a `/downloads/complete` au lieu de `/data/downloads/complete` apres chaque redemarrage.
+
+**Cause** : qBittorrent detecte un "unclean program exit" et restaure depuis un fichier fallback (`qBittorrent_new.conf`) qui contient les anciens chemins. Ce fichier se trouve dans le sous-dossier `/config/qBittorrent/`.
+
+**Diagnostic** :
+
+```bash
+# Verifier les logs qBittorrent
+docker compose logs qbittorrent 2>&1 | grep "unclean\|fallback"
+
+# Lister tous les fichiers de config
+find config/qbittorrent -name "*.conf"
+
+# Verifier les chemins dans chaque fichier
+find config/qbittorrent -name "*.conf" -exec grep -l "downloads" {} \;
+```
+
+**Solution** :
+
+```bash
+# 1. Arreter qBittorrent (via Gluetun)
+docker compose stop gluetun
+
+# 2. Corriger TOUS les fichiers de config
+find config/qbittorrent -name "*.conf" -exec grep -l "downloads" {} \; | while read f; do
+  sed -i 's|=/downloads/|=/data/downloads/|g' "$f"
+done
+
+# 3. Redemarrer
+docker compose up -d gluetun && sleep 10 && docker compose restart qbittorrent
+```
+
+---
+
 ### Sync ne fonctionne pas
 
 **Symptome** : les fichiers n'arrivent pas sur la Freebox.

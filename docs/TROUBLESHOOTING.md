@@ -204,6 +204,55 @@ DATA_PATH=/chemin/vers/volume
 
 ---
 
+## 8. qBittorrent — 502 Bad Gateway apres restart Gluetun
+
+**Date** : 2026-03-06
+
+**Symptome** : Apres un `docker compose restart gluetun`, qBittorrent affiche `healthy` dans `docker compose ps` mais le WebUI retourne 502 Bad Gateway. `curl http://127.0.0.1:8080` ne repond pas (code 000).
+
+**Cause** : qBittorrent utilise `network_mode: service:gluetun` (stack reseau partagee). Quand Gluetun redemarre seul, Docker recree son interface reseau mais qBittorrent garde une reference vers l'ancien namespace reseau. Le port mapping `127.0.0.1:8080->8080` passe par Gluetun, donc qBit devient inaccessible.
+
+**Solution** :
+```bash
+# Toujours redemarrer qBittorrent apres Gluetun
+docker compose restart gluetun && sleep 10 && docker compose restart qbittorrent
+```
+
+**Prevention** : Ne jamais redemarrer Gluetun seul. Un `docker compose up -d` global est safe car il respecte l'ordre `depends_on`.
+
+---
+
+## 9. qBittorrent — Config revient aux anciens chemins (/downloads au lieu de /data/downloads)
+
+**Date** : 2026-03-06
+
+**Symptome** : Apres chaque redemarrage, qBittorrent utilise `/downloads/complete` au lieu de `/data/downloads/complete`. Les torrents finis echouent avec "mkdir (): Permission denied" car `/downloads/complete` n'existe pas dans le conteneur.
+
+**Cause** : qBittorrent detecte un "unclean program exit" a chaque arret Docker et restaure depuis un fichier fallback `qBittorrent_new.conf` qui contient les anciens chemins. Ce fichier est dans le sous-dossier `config/qbittorrent/qBittorrent/`.
+
+**Diagnostic** :
+```bash
+# Voir le fallback dans les logs
+docker compose logs qbittorrent 2>&1 | grep "unclean\|fallback"
+
+# Lister et verifier tous les fichiers config
+find config/qbittorrent -name "*.conf" -exec grep -n "SavePath\|TempPath" {} \;
+```
+
+**Solution** :
+```bash
+# Arreter, corriger TOUS les fichiers, redemarrer
+docker compose stop gluetun
+find config/qbittorrent -name "*.conf" -exec grep -l "downloads" {} \; | while read f; do
+  sed -i 's|=/downloads/|=/data/downloads/|g' "$f"
+done
+docker compose up -d gluetun && sleep 10 && docker compose restart qbittorrent
+```
+
+**Prevention** : Le fichier `qBittorrent.conf` dans le repo Git contient desormais les bons chemins `/data/downloads/`. Apres un `git pull`, copier aussi vers le sous-dossier runtime.
+
+---
+
 ## Reseau — Rappel des IPs
 
 > **Note** : Ces IPs sont specifiques a l'environnement de deploiement actuel. Adaptez-les a votre configuration.
