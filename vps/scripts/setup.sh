@@ -282,8 +282,6 @@ else
     ok "Utilisateurs Authelia déjà configurés"
 fi
 
-# Injecter le domaine dans la config Authelia (variable d'environnement)
-export AUTHELIA_DOMAIN="${DOMAIN}"
 ok "Authelia configuré pour le domaine ${DOMAIN}"
 
 # ── 11. Configuration nginx reverse proxy ──

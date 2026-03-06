@@ -37,31 +37,31 @@ access_control:
 
   rules:
     # Overseerr : one_factor (accessible aux amis/famille)
-    - domain: 'overseerr.{{ .Env.AUTHELIA_DOMAIN }}'
+    - domain: 'overseerr.{{ .Env.DOMAIN }}'
       policy: one_factor
 
     # Services admin : two_factor
-    - domain: 'sonarr.{{ .Env.AUTHELIA_DOMAIN }}'
+    - domain: 'sonarr.{{ .Env.DOMAIN }}'
       policy: two_factor
-    - domain: 'radarr.{{ .Env.AUTHELIA_DOMAIN }}'
+    - domain: 'radarr.{{ .Env.DOMAIN }}'
       policy: two_factor
-    - domain: 'prowlarr.{{ .Env.AUTHELIA_DOMAIN }}'
+    - domain: 'prowlarr.{{ .Env.DOMAIN }}'
       policy: two_factor
-    - domain: 'qbittorrent.{{ .Env.AUTHELIA_DOMAIN }}'
+    - domain: 'qbittorrent.{{ .Env.DOMAIN }}'
       policy: two_factor
-    - domain: 'jackett.{{ .Env.AUTHELIA_DOMAIN }}'
+    - domain: 'jackett.{{ .Env.DOMAIN }}'
       policy: two_factor
-    - domain: 'home.{{ .Env.AUTHELIA_DOMAIN }}'
+    - domain: 'home.{{ .Env.DOMAIN }}'
       policy: two_factor
-    - domain: 'logs.{{ .Env.AUTHELIA_DOMAIN }}'
+    - domain: 'logs.{{ .Env.DOMAIN }}'
       policy: two_factor
 
 # ── Session ──
 session:
   cookies:
-    - domain: '{{ .Env.AUTHELIA_DOMAIN }}'
-      authelia_url: 'https://auth.{{ .Env.AUTHELIA_DOMAIN }}'
-      default_redirection_url: 'https://home.{{ .Env.AUTHELIA_DOMAIN }}'
+    - domain: '{{ .Env.DOMAIN }}'
+      authelia_url: 'https://auth.{{ .Env.DOMAIN }}'
+      default_redirection_url: 'https://home.{{ .Env.DOMAIN }}'
   expiration: 12h
   inactivity: 2h
   remember_me: 1M
