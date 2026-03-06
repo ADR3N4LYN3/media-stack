@@ -134,7 +134,7 @@ Se connecter en SSH a la VM Docker de la Freebox, puis :
 
 ```bash
 # Cloner le projet
-git clone https://github.com/TON_USER/media-stack.git
+git clone https://github.com/<TON_USER_GITHUB>/media-stack.git
 cd media-stack/freebox
 
 # Creer le fichier .env
@@ -226,7 +226,7 @@ apt update && apt install -y git
 **Cloner le projet :**
 
 ```bash
-git clone https://github.com/TON_USER/media-stack.git
+git clone https://github.com/<TON_USER_GITHUB>/media-stack.git
 cd media-stack/vps
 ```
 
@@ -251,7 +251,7 @@ Voici chaque variable avec son explication detaillee :
 
 | Variable | Description | Valeur par defaut |
 |---|---|---|
-| `DATA_PATH` | Racine du volume Hetzner (contient `downloads/` et `media/`) | `/mnt/HC_Volume_104978745` |
+| `DATA_PATH` | Racine du volume de stockage (contient `downloads/` et `media/`) | `/mnt/HC_Volume_XXXXXX` (ID de votre volume Hetzner) |
 
 > **Important** : `downloads/` et `media/` doivent etre sur le **meme filesystem** pour que les hardlinks fonctionnent (Sonarr/Radarr cree un hardlink au lieu de copier, economisant 100% d'espace disque pendant le seeding).
 
@@ -337,7 +337,7 @@ PUID=1000
 PGID=1000
 TZ=Europe/Paris
 
-DATA_PATH=/mnt/HC_Volume_104978745
+DATA_PATH=/mnt/HC_Volume_XXXXXX
 
 WIREGUARD_PRIVATE_KEY=maClePriveeMullvadIciEnBase64=
 WIREGUARD_ADDRESSES=10.66.123.45/32
@@ -526,9 +526,11 @@ Dans la console Hetzner Cloud, configurer le firewall avec ces regles :
 | **Sonarr** | 8989 | Gestionnaire de series TV |
 | **Radarr** | 7878 | Gestionnaire de films |
 | **Overseerr** | 5055 | Interface de demande utilisateur |
-| **Homepage** | 3000 | Dashboard de monitoring |
+| **Homepage** | 7575 (→3000 interne) | Dashboard de monitoring |
 | **Dozzle** | 9999 | Visualiseur de logs Docker |
 | **Byparr** | 8192 | Bypass Cloudflare pour indexeurs Prowlarr |
+| **Jackett** | 9117 | Indexeur supplementaire (fallback Cloudflare) |
+| **Authelia** | 9091 | SSO — portail d'authentification unique (2FA TOTP) |
 | **rclone** | - | Synchronisation VPS vers Freebox (toutes les minutes) |
 | **Fail2ban** | - | Protection brute-force SSH et nginx |
 | **Watchtower** | - | Mise a jour automatique des images Docker (3h du matin) |
@@ -653,7 +655,7 @@ La configuration est identique a Radarr :
 
 Acceder a `https://overseerr.DOMAIN`.
 
-> **Note** : Overseerr est protege par Authelia en one_factor (pas de 2FA requis, accessible aux amis/famille).
+> **Note** : Overseerr utilise son authentification interne (pas de SSO Authelia). C'est plus simple pour les amis et la famille qui n'ont pas besoin de 2FA.
 
 **Configuration initiale** :
 
@@ -944,4 +946,4 @@ nginx -t
 docker compose ps
 ```
 
-4. Verifier que le mode SSL Cloudflare est sur **Full (strict)**
+4. Verifier que le mode SSL Cloudflare est sur **Full (strict)** (compatible avec les certificats Cloudflare Origin)

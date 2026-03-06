@@ -38,6 +38,15 @@ WireGuard    ← tunnel vers Freebox (host)
 - **Cloudflare SSL** : Certificats origin generes et places dans `/etc/ssl/cloudflare/`
 
 
+## Documentation
+
+| Document | Description |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Architecture technique detaillee (services, reseau, securite) |
+| [docs/GUIDE.md](docs/GUIDE.md) | Guide d'installation pas-a-pas |
+| [docs/OPS.md](docs/OPS.md) | Operations, maintenance, sauvegardes et procedures d'urgence |
+| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Journal des bugs rencontres et solutions |
+
 ## Deploiement
 
 ### Etape 0 — Configurer WireGuard sur la Freebox
@@ -119,9 +128,11 @@ Dans cet ordre :
 
 5. **Overseerr** (`https://overseerr.DOMAIN`)
    - Connecter Sonarr + Radarr
+   - Configurer l'authentification interne (pas de SSO Authelia — acces simplifie pour amis/famille)
 
 6. **Homepage** (`https://home.DOMAIN`)
-   - Configurer les widgets avec les API keys des services
+   - Deja preconfigure via les fichiers YAML dans `config/homepage/`
+   - Les cles API sont passees en variables d'environnement
 
 ### Indexeurs recommandes (Prowlarr)
 
@@ -147,8 +158,13 @@ Dans cet ordre :
 media-stack/
 ├── README.md
 ├── .gitignore
+├── docs/
+│   ├── ARCHITECTURE.md          # Architecture technique detaillee
+│   ├── GUIDE.md                 # Guide d'installation pas-a-pas
+│   ├── OPS.md                   # Operations, maintenance, sauvegardes
+│   └── TROUBLESHOOTING.md       # Journal des bugs et solutions
 ├── vps/
-│   ├── docker-compose.yml       # 15 services (sans nginx, sur le host)
+│   ├── docker-compose.yml       # 14 services (sans nginx, sur le host)
 │   ├── .env.example             # Variables a personnaliser
 │   ├── nginx/
 │   │   ├── media-stack.conf.template  # Template reverse proxy
@@ -161,12 +177,18 @@ media-stack/
 │   │       └── nginx-auth.conf  # Filtre auth echoue
 │   ├── config/
 │   │   ├── authelia/
-│   │   │   ├── configuration.yml       # Config Authelia SSO
-│   │   │   └── users_database.yml      # Template utilisateurs (placeholders)
+│   │   │   ├── configuration.yml.template  # Template config Authelia SSO
+│   │   │   └── users_database.yml          # Template utilisateurs (placeholders)
 │   │   ├── rclone/
 │   │   │   └── rclone.conf.template
-│   │   └── qbittorrent/
-│   │       └── qBittorrent.conf # Config optimisee
+│   │   ├── qbittorrent/
+│   │   │   ├── qBittorrent.conf            # Config optimisee
+│   │   │   └── custom-services.d/
+│   │   │       └── set-password.sh         # Auto-config mot de passe qBit
+│   │   └── homepage/
+│   │       ├── services.yaml    # Widgets et services du dashboard
+│   │       ├── settings.yaml    # Theme, layout, langue
+│   │       └── widgets.yaml     # Widgets systeme (CPU, RAM, disque)
 │   └── scripts/
 │       ├── setup.sh             # Installation VPS + tunnel WireGuard + Authelia + nginx
 │       ├── harden.sh            # Durcissement systeme
@@ -188,8 +210,9 @@ media-stack/
 | `WG_FREEBOX_ADDRESS` | `vps/.env` | Adresse IP du VPS dans le tunnel (ex: 192.168.27.65/32) |
 | `WG_FREEBOX_PUBLIC_KEY` | `vps/.env` | Cle publique de la Freebox (dans le fichier .conf, section [Peer]) |
 | `WG_FREEBOX_ENDPOINT` | `vps/.env` | IP publique de la Freebox (dans le fichier .conf, Endpoint sans le port) |
-| `FREEBOX_WG_IP` | `vps/.env` | IP WireGuard de la Freebox dans le tunnel (ex: 192.168.27.64) |
-| `DOMAIN` | `vps/.env` | Domaine pointant vers le VPS |
+| `FREEBOX_WG_IP` | `vps/.env` | IP de la machine hebergeant le SFTP Freebox, accessible via le tunnel (IP LAN de la VM si Docker tourne dans une VM, ou IP WireGuard du routeur si Docker est natif) |
+| `DOMAIN` | `vps/.env` | Domaine pointant vers le VPS (ex: media.exemple.fr) |
+| `HETZNER_VOLUME_PATH` | `vps/.env` | Chemin du volume Hetzner (pour widget disque Homepage) |
 | `AUTHELIA_JWT_SECRET` | `vps/.env` | Secret JWT Authelia (min 32 chars, `openssl rand -hex 32`) |
 | `AUTHELIA_SESSION_SECRET` | `vps/.env` | Secret session Authelia (min 32 chars) |
 | `AUTHELIA_STORAGE_ENCRYPTION_KEY` | `vps/.env` | Cle de chiffrement stockage Authelia (min 32 chars) |
@@ -205,7 +228,7 @@ media-stack/
 - **Tunnel WireGuard** : transferts VPS→Freebox chiffres, SFTP accessible uniquement via le tunnel
 - **Aucun port interne expose** : seuls nginx (80/443) sont accessibles depuis l'exterieur
 - **Cloudflare proxy** : IP reelle du VPS masquee, protection DDoS
-- **Authelia SSO** : authentification unique pour tous les services, 2FA (TOTP) sur les services admin
+- **Authelia SSO** : authentification unique pour les services admin (2FA TOTP). Overseerr utilise son auth interne (plus simple pour les utilisateurs non-techniques)
 - **no-new-privileges** sur tous les conteneurs sauf Gluetun
 - **Security headers** HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy sur tous les services
 - **Fail2ban** actif sur SSH (ban 24h apres 3 echecs) et auth nginx (ban 1h apres 5 echecs)
