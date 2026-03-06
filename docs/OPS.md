@@ -469,7 +469,7 @@ openssl x509 -in /etc/ssl/cloudflare/cert.pem -noout -dates
 | nginx config invalide | `nginx -t` pour voir l'erreur, corriger, puis `systemctl reload nginx` |
 | Certificat expire | Regenerer dans Cloudflare Dashboard, remplacer les fichiers |
 | DNS non configure | Ajouter le A record dans Cloudflare (proxy ON) |
-| Cloudflare SSL mode | Verifier que le mode SSL est `Full (strict)` dans Cloudflare |
+| Cloudflare SSL mode | Verifier que le mode SSL est `Full` dans Cloudflare (pas strict avec Origin Cert) |
 
 ---
 
@@ -632,6 +632,76 @@ Causes possibles :
 - Variables d'environnement `AUTHELIA_*` manquantes dans `.env`
 - DNS `auth.DOMAIN` non configure dans Cloudflare
 - Snippet nginx `authelia-authrequest.conf` mal deploye dans `/etc/nginx/snippets/`
+- Nginx `default_server` manquant sur le bloc auth (cause erreur 525 Cloudflare)
+
+### Cloudflare 525 SSL handshake failed
+
+**Symptome** : erreur 525 sur un ou tous les sous-domaines, malgre SSL fonctionnel en local.
+
+**Diagnostic** :
+
+```bash
+# Verifier que nginx ecoute sur 443
+ss -tlnp | grep 443
+
+# Verifier que le cert couvre le domaine
+openssl x509 -in /etc/ssl/cloudflare/cert.pem -text -noout | grep -A2 "Subject Alternative Name"
+
+# Tester SSL comme Cloudflare le ferait
+openssl s_client -connect <VPS_IP>:443 -servername home.<DOMAIN> 2>&1 | head -20
+
+# Verifier qu'il n'y a qu'UN seul fichier nginx pour le port 443
+ls /etc/nginx/sites-enabled/
+```
+
+**Solution** :
+
+| Cause | Solution |
+|---|---|
+| Pas de `default_server` | Ajouter `default_server` a `listen 443 ssl` du bloc auth dans media-stack |
+| Plusieurs fichiers nginx SSL | Integrer tous les server blocks 443 dans un seul fichier (`media-stack`) |
+| Mode Cloudflare SSL strict | Passer en mode "Full" (pas strict) dans Cloudflare SSL/TLS |
+| Firewall bloque Cloudflare | Verifier `iptables -L INPUT -n` — le port 443 doit etre ouvert |
+
+**Important** : tous les server blocks SSL port 443 doivent etre dans **un seul fichier nginx** pour eviter les conflits SSL avec Cloudflare.
+
+### Services *arr affichent leur propre page de login
+
+**Symptome** : apres authentification Authelia, Radarr/Sonarr/Prowlarr montrent encore leur page login interne.
+
+**Solution** : desactiver l'auth interne en la passant en mode "External" :
+
+```bash
+# Radarr
+sed -i 's|<AuthenticationMethod>.*</AuthenticationMethod>|<AuthenticationMethod>External</AuthenticationMethod>|' config/radarr/config.xml
+
+# Sonarr
+sed -i 's|<AuthenticationMethod>.*</AuthenticationMethod>|<AuthenticationMethod>External</AuthenticationMethod>|' config/sonarr/config.xml
+
+# Prowlarr
+sed -i 's|<AuthenticationMethod>.*</AuthenticationMethod>|<AuthenticationMethod>External</AuthenticationMethod>|' config/prowlarr/config.xml
+
+# Redemarrer
+docker restart radarr sonarr prowlarr
+```
+
+### Authelia — code de verification / TOTP
+
+Avec le notifier `filesystem`, les codes de verification d'identite sont ecrits dans un fichier (pas envoyes par email) :
+
+```bash
+# Lire le code OTP
+cat /home/adr3bot/bot/media-stack/vps/config/authelia/notification.txt
+```
+
+Le code est une chaine de 8 caracteres (ex: `PZ3U92QW`). Ne pas copier d'espaces ou de texte supplementaire.
+
+Si rate limit atteint apres trop de tentatives :
+
+```bash
+docker restart authelia
+# Attendre ~30s puis retenter
+```
 
 ---
 
