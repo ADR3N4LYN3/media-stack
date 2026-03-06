@@ -161,21 +161,21 @@ services:
     restart: unless-stopped
 
   # ──────────────────────────────────────────────
-  # Interface de demande utilisateur
+  # Interface de demande utilisateur (migration Overseerr → Seerr)
   # ──────────────────────────────────────────────
-  overseerr:
-    image: linuxserver/overseerr:latest
-    container_name: overseerr
+  seerr:
+    image: ghcr.io/seerr-team/seerr:latest
+    container_name: seerr
+    init: true
     environment:
-      - PUID=${PUID}
-      - PGID=${PGID}
       - TZ=${TZ}
+      - PORT=5055
     volumes:
-      - ./config/overseerr:/config
+      - ./config/overseerr:/app/config
     ports:
       - "127.0.0.1:5055:5055"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5055/api/v1/status"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:5055/api/v1/status"]
       interval: 30s
       timeout: 10s
       retries: 3
