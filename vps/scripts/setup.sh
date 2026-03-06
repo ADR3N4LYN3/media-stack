@@ -268,7 +268,7 @@ AUTHELIA_USERS_TEMPLATE="$PROJECT_DIR/config/authelia/users_database.yml"
 
 if grep -q "AUTHELIA_HASH_PLACEHOLDER" "$AUTHELIA_USERS_DB" 2>/dev/null; then
     info "Génération du hash Argon2id pour Authelia..."
-    AUTHELIA_HASH=$(docker run --rm authelia/authelia:latest crypto hash generate argon2 --password "${AUTHELIA_PASSWORD}" 2>/dev/null | grep 'Digest:' | awk '{print $2}')
+    AUTHELIA_HASH=$(docker run --rm --entrypoint authelia authelia/authelia:latest crypto hash generate argon2 --password "${AUTHELIA_PASSWORD}" 2>/dev/null | grep 'Digest:' | awk '{print $2}')
     if [ -z "$AUTHELIA_HASH" ]; then
         die "Impossible de générer le hash Authelia. Vérifie que Docker fonctionne."
     fi
