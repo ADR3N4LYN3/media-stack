@@ -1,0 +1,14 @@
+[Unit]
+Description=NFS mount Freebox media via WireGuard
+After=network-online.target wg-quick@wg-freebox.service
+Wants=network-online.target
+Requires=wg-quick@wg-freebox.service
+
+[Mount]
+What=FREEBOX_WG_IP_PLACEHOLDER:/data
+Where=/mnt/freebox
+Type=nfs4
+Options=rw,soft,timeo=150,retrans=3,_netdev
+
+[Install]
+WantedBy=multi-user.target

@@ -198,7 +198,7 @@ DATA_PATH=/chemin/vers/volume
 - **Radarr** : Root Folder -> `/data/media/films` (supprimer l'ancien `/movies`)
 - **Sonarr/Radarr** : Download Client > qBittorrent > **Remove Completed** actif
 - **Series/films existants** : Mass Editor > Select All > Change Root Folder vers le nouveau chemin
-- **Overseerr** : Settings > Services > Radarr/Sonarr > Selectionner le nouveau dossier racine
+- **Seerr** : Settings > Services > Radarr/Sonarr > Selectionner le nouveau dossier racine
 - **Radarr** : Settings > Media Management > **Unmonitor Deleted Movies** actif (evite re-download apres rclone move)
 - **qBittorrent** : Settings > BitTorrent > When ratio reaches `1.0` / seeding time `1440` min -> Stop torrent
 

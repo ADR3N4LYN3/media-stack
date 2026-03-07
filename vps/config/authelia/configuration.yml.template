@@ -37,8 +37,8 @@ access_control:
   default_policy: deny
 
   rules:
-    # Overseerr : pas d'Authelia (auth interne Overseerr)
-    # Les amis/famille se connectent directement via Overseerr
+    # Seerr : pas d'Authelia (auth interne Seerr)
+    # Les amis/famille se connectent directement via Seerr
 
     # Services admin : two_factor
     - domain: 'sonarr.DOMAIN_PLACEHOLDER'

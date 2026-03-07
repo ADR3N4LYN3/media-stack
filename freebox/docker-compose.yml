@@ -1,5 +1,76 @@
 services:
   # ──────────────────────────────────────────────
+  # VPN — Tout le trafic qBittorrent passe par ici
+  # WebUI accessible uniquement via le tunnel WireGuard
+  # ──────────────────────────────────────────────
+  gluetun:
+    image: qmcgaw/gluetun:latest
+    container_name: gluetun
+    mem_limit: 256m
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    ports:
+      - "${FREEBOX_WG_IP}:8080:8080"
+    environment:
+      - VPN_SERVICE_PROVIDER=mullvad
+      - VPN_TYPE=wireguard
+      - WIREGUARD_PRIVATE_KEY=${WIREGUARD_PRIVATE_KEY}
+      - WIREGUARD_ADDRESSES=${WIREGUARD_ADDRESSES}
+      - SERVER_COUNTRIES=Finland
+      - FIREWALL_OUTBOUND_SUBNETS=192.168.27.0/24
+      - BLOCK_MALICIOUS=on
+      - BLOCK_ADS=off
+      - DNS_KEEP_NAMESERVER=off
+      - DNS_ADDRESS=1.1.1.1
+      - FIREWALL_INPUT_PORTS=8080
+    volumes:
+      - ./config/gluetun:/gluetun
+    tmpfs:
+      - /tmp/gluetun
+    healthcheck:
+      test: ["CMD", "sh", "-c", "ip link show tun0 2>/dev/null | grep -q UP"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────
+  # Client torrent — Derrière le VPN obligatoirement
+  # Télécharge directement sur le NVMe Freebox
+  # ──────────────────────────────────────────────
+  qbittorrent:
+    image: linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    mem_limit: 1g
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - WEBUI_PORT=8080
+      - QBIT_PASSWORD=${QBIT_PASSWORD:-}
+    volumes:
+      - ./config/qbittorrent:/config
+      - ./config/qbittorrent/custom-services.d:/custom-services.d:ro
+      - ${DATA_PATH}:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    security_opt:
+      - "no-new-privileges:true"
+    restart: unless-stopped
+
+  # ──────────────────────────────────────────────
   # SFTP — Réception des fichiers depuis le VPS
   # Accessible uniquement via le tunnel WireGuard
   # ──────────────────────────────────────────────
@@ -19,6 +90,8 @@ services:
     volumes:
       - ./config/sftp:/config
       - ${MEDIA_PATH}:/data
+    security_opt:
+      - "no-new-privileges:true"
     restart: unless-stopped
 
   # ──────────────────────────────────────────────

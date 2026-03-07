@@ -1,7 +1,7 @@
 - search:
     provider: overseerr
     target: _blank
-    url: https://overseerr.{{HOMEPAGE_VAR_DOMAIN}}
+    url: https://seerr.{{HOMEPAGE_VAR_DOMAIN}}
 
 - resources:
     cpu: true

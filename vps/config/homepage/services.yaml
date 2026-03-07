@@ -1,12 +1,12 @@
 - Media:
     - Seerr:
         icon: overseerr.svg
-        href: https://overseerr.{{HOMEPAGE_VAR_DOMAIN}}
+        href: https://seerr.{{HOMEPAGE_VAR_DOMAIN}}
         description: Demandes de films et séries
         widget:
           type: overseerr
           url: http://seerr:5055
-          key: "{{HOMEPAGE_VAR_OVERSEERR_KEY}}"
+          key: "{{HOMEPAGE_VAR_SEERR_KEY}}"
 
     - Radarr:
         icon: radarr.svg
@@ -30,10 +30,10 @@
     - qBittorrent:
         icon: qbittorrent.svg
         href: https://qbittorrent.{{HOMEPAGE_VAR_DOMAIN}}
-        description: Client torrent (Mullvad VPN)
+        description: Client torrent (Mullvad VPN — Freebox)
         widget:
           type: qbittorrent
-          url: http://gluetun:8080
+          url: http://{{HOMEPAGE_VAR_FREEBOX_WG_IP}}:8080
           username: admin
           password: "{{HOMEPAGE_VAR_QBIT_PASSWORD}}"
 

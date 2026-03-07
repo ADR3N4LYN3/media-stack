@@ -1,6 +1,6 @@
 # Guide d'installation et d'utilisation - Media Stack
 
-Guide complet pour deployer et utiliser le Media Stack self-hosted : telechargement automatise sur VPS derriere VPN, synchronisation vers Freebox Ultra, lecture 4K direct play via le player Freebox.
+Guide complet pour deployer et utiliser le Media Stack self-hosted : telechargement automatise sur Freebox derriere VPN, acces aux fichiers depuis le VPS via NFS, lecture 4K direct play via le player Freebox.
 
 ---
 
@@ -55,7 +55,7 @@ Avant de commencer, il faut creer ces comptes :
 
 ## 2. Installation Freebox
 
-La Freebox heberge un serveur SFTP (reception des fichiers depuis le VPS). La lecture se fait directement via le player Freebox integre. On configure la Freebox en premier car le VPS a besoin des informations WireGuard.
+La Freebox heberge qBittorrent (derriere VPN Gluetun), un serveur NFS et un serveur SFTP (legacy). La lecture se fait directement via le player Freebox integre. On configure la Freebox en premier car le VPS a besoin des informations WireGuard.
 
 ### 2.1 Activer Docker dans Freebox OS
 
@@ -151,7 +151,11 @@ Voici chaque variable avec son explication :
 | `PUID` | ID utilisateur Linux (laisser 1000 par defaut) | `1000` |
 | `PGID` | ID groupe Linux (laisser 1000 par defaut) | `1000` |
 | `TZ` | Fuseau horaire | `Europe/Paris` |
-| `MEDIA_PATH` | Chemin des medias dans la VM | `/data/media` |
+| `DATA_PATH` | Chemin racine des donnees (contient downloads/ et media/) | `/data` |
+| `WIREGUARD_PRIVATE_KEY` | Cle privee WireGuard Mullvad | depuis le compte Mullvad |
+| `WIREGUARD_ADDRESSES` | Adresse IP WireGuard Mullvad | depuis le compte Mullvad |
+| `QBIT_PASSWORD` | Mot de passe WebUI qBittorrent | choix utilisateur |
+| `FREEBOX_WG_IP` | IP de la machine sur le tunnel WireGuard | ex: `192.168.27.64` |
 | `SFTP_USER` | Nom utilisateur pour la connexion SFTP | `mediastack` |
 
 Exemple de fichier `.env` complet :
@@ -161,7 +165,13 @@ PUID=1000
 PGID=1000
 TZ=Europe/Paris
 
-MEDIA_PATH=/data/media
+DATA_PATH=/data
+
+WIREGUARD_PRIVATE_KEY=maClePriveeMullvadIciEnBase64=
+WIREGUARD_ADDRESSES=10.66.123.45/32
+
+QBIT_PASSWORD=MonMotDePasseQbit
+FREEBOX_WG_IP=192.168.27.64
 
 SFTP_USER=mediastack
 ```
@@ -180,10 +190,7 @@ Le script effectue les operations suivantes :
 3. **Prepare le conteneur SFTP** : cree le repertoire `config/sftp/ssh/`
 4. **Copie .env.example vers .env** si le fichier n'existe pas encore
 5. **Verifie les variables** : s'arrete si des valeurs `CHANGE_ME` restent
-6. **Demande la cle SSH publique du VPS** : cette cle sera utilisee par rclone pour se connecter en SFTP. Tu l'obtiendras lors de l'installation du VPS (etape 3)
-7. **Demande confirmation** puis lance `docker compose up -d`
-
-> **Note** : Si tu n'as pas encore la cle SSH du VPS, laisse le champ vide et appuie sur Entree. Tu pourras l'ajouter manuellement plus tard dans `config/sftp/ssh/authorized_key`.
+6. **Demande confirmation** puis lance `docker compose up -d`
 
 A la fin, tu verras :
 
@@ -191,17 +198,28 @@ A la fin, tu verras :
   SFTP  -> port 2222 (via tunnel WireGuard)
 ```
 
-### 2.6 Services lances sur la Freebox
+### 2.6 Installer le serveur NFS
+
+```bash
+bash nfs-setup.sh <VPS_WG_IP>
+# L'IP WireGuard du VPS se trouve dans WG_FREEBOX_ADDRESS du .env VPS (sans le /32)
+```
+
+### 2.7 Services lances sur la Freebox
 
 | Service | Port | Role |
 |---|---|---|
-| **SFTP** | 2222 | Reception des fichiers depuis le VPS via WireGuard |
+| **Gluetun** | 8080 (bind WireGuard) | VPN Mullvad WireGuard pour les torrents |
+| **qBittorrent** | via Gluetun | Client torrent (telechargement direct NVMe) |
+| **NFS** | 2049 (bind WireGuard) | Export donnees vers le VPS |
+| **SFTP** | 2222 | Acces fichiers alternatif (legacy) |
+| **Jellyfin** | 8096 | Serveur media (lecture locale) |
 
 ---
 
 ## 3. Installation VPS
 
-Le VPS est le coeur du systeme : il gere les demandes, le telechargement via VPN, et la synchronisation vers la Freebox.
+Le VPS est le coeur du systeme : il gere les demandes, l'indexation et le reverse proxy. Les telechargements se font sur la Freebox, accessibles via NFS.
 
 ### 3.1 Preparer le serveur
 
@@ -255,20 +273,6 @@ Voici chaque variable avec son explication detaillee :
 
 > **Important** : `downloads/` et `media/` doivent etre sur le **meme filesystem** pour que les hardlinks fonctionnent (Sonarr/Radarr cree un hardlink au lieu de copier, economisant 100% d'espace disque pendant le seeding).
 
-#### VPN Mullvad WireGuard (pour les torrents)
-
-| Variable | Description | Comment l'obtenir |
-|---|---|---|
-| `WIREGUARD_PRIVATE_KEY` | Cle privee WireGuard Mullvad | Generer sur mullvad.net > Compte > Config WireGuard |
-| `WIREGUARD_ADDRESSES` | Adresse IP WireGuard Mullvad | Fournie avec la cle (ex: `10.66.123.45/32`) |
-
-Pour generer ces valeurs :
-
-1. Se connecter sur mullvad.net
-2. Aller dans **Compte** > **WireGuard configuration**
-3. Generer une nouvelle cle
-4. Copier la cle privee et l'adresse IP
-
 #### Tunnel WireGuard VPS vers Freebox
 
 Ces valeurs viennent du **fichier .conf telecharge a l'etape 2.2** :
@@ -281,14 +285,11 @@ Ces valeurs viennent du **fichier .conf telecharge a l'etape 2.2** :
 | `WG_FREEBOX_ENDPOINT` | IP publique de la Freebox (**sans le port**) | `82.123.45.67` |
 | `WG_FREEBOX_PORT` | Port WireGuard de la Freebox | `22563` (defaut) |
 
-#### Freebox SFTP (pour rclone)
+#### Freebox (qBittorrent + NFS)
 
 | Variable | Description | Exemple |
 |---|---|---|
-| `FREEBOX_WG_IP` | IP WireGuard de la Freebox dans le tunnel | `192.168.27.64` |
-| `FREEBOX_SFTP_PORT` | Port SFTP du conteneur sur la Freebox | `2222` (defaut) |
-| `FREEBOX_SFTP_USER` | Utilisateur SFTP | `mediastack` (defaut) |
-| `FREEBOX_MEDIA_PATH` | Chemin des medias cote Freebox | `/data` (defaut) |
+| `FREEBOX_WG_IP` | IP de la Freebox pour le proxy nginx, widget Homepage et montage NFS | `192.168.27.64` |
 
 #### Domaine et nginx
 
@@ -314,7 +315,7 @@ Ces valeurs viennent du **fichier .conf telecharge a l'etape 2.2** :
 | `HOMEPAGE_RADARR_KEY` | Cle API Radarr pour Homepage | Copier depuis Radarr > Settings > General |
 | `HOMEPAGE_SONARR_KEY` | Cle API Sonarr pour Homepage | Copier depuis Sonarr > Settings > General |
 | `HOMEPAGE_PROWLARR_KEY` | Cle API Prowlarr pour Homepage | Copier depuis Prowlarr > Settings > General |
-| `HOMEPAGE_OVERSEERR_KEY` | Cle API Overseerr pour Homepage | Copier depuis Overseerr > Settings > General |
+| `HOMEPAGE_SEERR_KEY` | Cle API Seerr pour Homepage | Copier depuis Seerr > Settings > General |
 
 #### Notifications
 
@@ -328,7 +329,6 @@ Ces valeurs viennent du **fichier .conf telecharge a l'etape 2.2** :
 | Variable | Description | Valeur par defaut |
 |---|---|---|
 | `SSH_PORT` | Port SSH personnalise (pour le durcissement) | `2222` |
-| `PORT_QBITTORRENT` | Port interne qBittorrent | `8080` |
 
 Exemple de fichier `.env` complet :
 
@@ -339,9 +339,6 @@ TZ=Europe/Paris
 
 DATA_PATH=/mnt/HC_Volume_XXXXXX
 
-WIREGUARD_PRIVATE_KEY=maClePriveeMullvadIciEnBase64=
-WIREGUARD_ADDRESSES=10.66.123.45/32
-
 WG_FREEBOX_PRIVATE_KEY=maClePriveeTunnelIci=
 WG_FREEBOX_ADDRESS=192.168.27.65/32
 WG_FREEBOX_PUBLIC_KEY=clePubliqueFreebox=
@@ -349,9 +346,6 @@ WG_FREEBOX_ENDPOINT=82.123.45.67
 WG_FREEBOX_PORT=22563
 
 FREEBOX_WG_IP=192.168.27.64
-FREEBOX_SFTP_PORT=2222
-FREEBOX_SFTP_USER=mediastack
-FREEBOX_MEDIA_PATH=/data
 
 DOMAIN=media.exemple.fr
 
@@ -365,13 +359,12 @@ AUTHELIA_EMAIL=admin@exemple.fr
 HOMEPAGE_RADARR_KEY=votreCleApiRadarr
 HOMEPAGE_SONARR_KEY=votreCleApiSonarr
 HOMEPAGE_PROWLARR_KEY=votreCleApiProwlarr
-HOMEPAGE_OVERSEERR_KEY=votreCleApiOverseerr
+HOMEPAGE_SEERR_KEY=votreCleApiSeerr
 
 DISCORD_WATCHTOWER_WEBHOOK_ID=123456789
 DISCORD_WATCHTOWER_WEBHOOK_TOKEN=votreTokenWebhook
 
 SSH_PORT=2222
-PORT_QBITTORRENT=8080
 ```
 
 ### 3.3 Lancer le script d'installation
@@ -386,35 +379,18 @@ Voici ce que fait chaque etape du script :
 |---|---|---|
 | 1 | **Verification prerequis** | Installe Docker, Docker Compose, inotify-tools et WireGuard si absents |
 | 2 | **Creation repertoires** | Cree `/data/downloads/complete`, `/data/downloads/incomplete`, `/data/media/films`, `/data/media/series` |
-| 3 | **Generation cle SSH** | Cree une cle Ed25519 dans `config/rclone/id_rsa` pour la connexion SFTP vers la Freebox |
-| 4 | **Copie .env** | Copie `.env.example` vers `.env` si le fichier n'existe pas |
-| 5 | **Verification variables** | Verifie qu'aucune variable ne contient encore `CHANGE_ME` |
-| 6 | **Tunnel WireGuard** | Genere `/etc/wireguard/wg-freebox.conf` et active le tunnel vers la Freebox |
-| 7 | **Generation rclone.conf** | Configure rclone pour la connexion SFTP vers la Freebox via le tunnel |
-| 8 | **Scan cle hote SFTP** | Enregistre la cle du serveur SFTP Freebox dans `known_hosts` |
-| 9 | **Affiche la cle SSH publique** | **A copier** pour la coller cote Freebox dans `config/sftp/ssh/authorized_key` |
-| 10 | **Configuration Authelia** | Genere le hash Argon2id du mot de passe, configure users_database.yml |
-| 11 | **Configuration nginx** | Installe nginx, deploie la config reverse proxy avec auth_request Authelia |
-| 12 | **Durcissement systeme** | Propose de lancer `harden.sh` (optionnel mais recommande) |
-| 13-15 | **Lancement Docker** | Demande confirmation puis lance `docker compose up -d` |
-| 16 | **Healthchecks** | Attend que Gluetun, Prowlarr et Authelia soient healthy (timeout 120s) |
-| 17 | **Resume** | Affiche les URLs de tous les services |
+| 3 | **Copie .env** | Copie `.env.example` vers `.env` si le fichier n'existe pas |
+| 4 | **Verification variables** | Verifie qu'aucune variable ne contient encore `CHANGE_ME` |
+| 5 | **Tunnel WireGuard** | Genere `/etc/wireguard/wg-freebox.conf` et active le tunnel vers la Freebox |
+| 6 | **Montage NFS** | Installe nfs-common, cree le unit systemd, monte /mnt/freebox |
+| 7 | **Configuration Authelia** | Genere le hash Argon2id du mot de passe, configure users_database.yml |
+| 8 | **Configuration nginx** | Installe nginx, deploie la config reverse proxy avec auth_request Authelia |
+| 9 | **Durcissement systeme** | Propose de lancer `harden.sh` (optionnel mais recommande) |
+| 10-12 | **Lancement Docker** | Demande confirmation puis lance `docker compose up -d` |
+| 13 | **Healthchecks** | Attend que Prowlarr et Authelia soient healthy (timeout 120s) |
+| 14 | **Resume** | Affiche les URLs de tous les services |
 
-> **Attention** : A l'etape 9, le script affiche une cle SSH publique. **Copie-la** et retourne sur la Freebox pour la coller dans `freebox/config/sftp/ssh/authorized_key`. Sans cette cle, rclone ne pourra pas se connecter pour synchroniser les fichiers.
-
-### 3.4 Copier la cle SSH sur la Freebox
-
-Apres l'execution de `setup.sh`, le script affiche une cle publique SSH. Il faut la copier sur la Freebox :
-
-```bash
-# Sur la Freebox (VM Docker), dans le repertoire du projet
-echo "ssh-ed25519 AAAA... media-stack-rclone" > freebox/config/sftp/ssh/authorized_key
-
-# Redemarrer le conteneur SFTP pour prendre en compte la cle
-cd freebox && docker compose restart sftp
-```
-
-### 3.5 Durcissement systeme (harden.sh)
+### 3.4 Durcissement systeme (harden.sh)
 
 Le script `harden.sh` est propose automatiquement par `setup.sh`. Il est **fortement recommande** de l'executer. Voici ce qu'il fait :
 
@@ -433,7 +409,7 @@ Le script `harden.sh` est propose automatiquement par `setup.sh`. Il est **forte
 >
 > Si ca fonctionne, tu peux fermer l'ancienne session. Sinon, tu as toujours la session ouverte pour corriger.
 
-### 3.6 Configurer Cloudflare DNS
+### 3.5 Configurer Cloudflare DNS
 
 Aller dans le **Cloudflare Dashboard** > ton domaine > **DNS**.
 
@@ -442,7 +418,7 @@ Creer les enregistrements A suivants (tous pointent vers l'IP du VPS) :
 | Type | Nom | Contenu | Proxy |
 |---|---|---|---|
 | A | `auth` | IP du VPS | Active (orange) |
-| A | `overseerr` | IP du VPS | Active (orange) |
+| A | `seerr` | IP du VPS | Active (orange) |
 | A | `sonarr` | IP du VPS | Active (orange) |
 | A | `radarr` | IP du VPS | Active (orange) |
 | A | `prowlarr` | IP du VPS | Active (orange) |
@@ -455,7 +431,7 @@ Exemple concret avec le domaine `media.exemple.fr` :
 
 ```
 auth.media.exemple.fr         ->  95.217.xx.xx  (Proxy ON)
-overseerr.media.exemple.fr    ->  95.217.xx.xx  (Proxy ON)
+seerr.media.exemple.fr        ->  95.217.xx.xx  (Proxy ON)
 sonarr.media.exemple.fr       ->  95.217.xx.xx  (Proxy ON)
 radarr.media.exemple.fr       ->  95.217.xx.xx  (Proxy ON)
 prowlarr.media.exemple.fr     ->  95.217.xx.xx  (Proxy ON)
@@ -467,7 +443,7 @@ jackett.media.exemple.fr      ->  95.217.xx.xx  (Proxy ON)
 
 > **Note** : Le proxy Cloudflare (icone orange) masque l'IP reelle du VPS et offre une protection DDoS gratuite.
 
-### 3.7 Certificats SSL Cloudflare Origin
+### 3.6 Certificats SSL Cloudflare Origin
 
 Les certificats Origin permettent le chiffrement entre Cloudflare et ton VPS.
 
@@ -499,7 +475,7 @@ chmod 644 /etc/ssl/cloudflare/cert.pem
 
 Dans Cloudflare > **SSL/TLS** > **Overview**, mettre le mode SSL sur **Full (strict)**.
 
-### 3.8 Configurer le Firewall Hetzner
+### 3.7 Configurer le Firewall Hetzner
 
 Dans la console Hetzner Cloud, configurer le firewall avec ces regles :
 
@@ -516,22 +492,20 @@ Dans la console Hetzner Cloud, configurer le firewall avec ces regles :
 
 > **Note** : Aucun port de service interne (Sonarr 8989, Radarr 7878, etc.) ne doit etre ouvert. Tout passe par nginx sur le port 443.
 
-### 3.9 Services lances sur le VPS
+### 3.8 Services lances sur le VPS
 
 | Service | Port interne | Role |
 |---|---|---|
-| **Gluetun** | 8080 (qBittorrent) | VPN Mullvad WireGuard pour les torrents |
-| **qBittorrent** | via Gluetun | Client torrent (protege par le VPN) |
 | **Prowlarr** | 9696 | Gestionnaire d'indexeurs torrent |
 | **Sonarr** | 8989 | Gestionnaire de series TV |
 | **Radarr** | 7878 | Gestionnaire de films |
-| **Overseerr** | 5055 | Interface de demande utilisateur |
-| **Homepage** | 7575 (→3000 interne) | Dashboard de monitoring |
+| **Seerr** | 5055 | Interface de demande utilisateur |
+| **Homepage** | 7575 (->3000 interne) | Dashboard de monitoring |
 | **Dozzle** | 9999 | Visualiseur de logs Docker |
 | **Byparr** | 8192 | Bypass Cloudflare pour indexeurs Prowlarr |
 | **Jackett** | 9117 | Indexeur supplementaire (fallback Cloudflare) |
-| **Authelia** | 9091 | SSO — portail d'authentification unique (2FA TOTP) |
-| **rclone** | - | Synchronisation VPS vers Freebox (toutes les minutes) |
+| **Authelia** | 9091 | SSO -- portail d'authentification unique (2FA TOTP) |
+| **NFS mount** | /mnt/freebox | Acces aux fichiers Freebox via WireGuard |
 | **Fail2ban** | - | Protection brute-force SSH et nginx |
 | **Watchtower** | - | Mise a jour automatique des images Docker (3h du matin) |
 
@@ -608,18 +582,12 @@ Acceder a `https://radarr.DOMAIN`.
 | Champ | Valeur |
 |---|---|
 | Name | `qBittorrent` |
-| Host | `gluetun` |
+| Host | `${FREEBOX_WG_IP}` (ex: `192.168.27.64`) |
 | Port | `8080` |
 | Username | `admin` |
-| Password | Celui de qBittorrent (voir note ci-dessous) |
+| Password | Celui defini dans `QBIT_PASSWORD` du `.env` Freebox |
 
-> **Note** : Au premier demarrage, qBittorrent genere un mot de passe temporaire visible dans les logs. Pour le recuperer :
->
-> ```bash
-> docker logs qbittorrent 2>&1 | grep "temporary password"
-> ```
->
-> Connecte-toi ensuite a qBittorrent via `https://qbittorrent.DOMAIN` pour changer le mot de passe dans **Options** > **Web UI**.
+> **Note** : qBittorrent tourne maintenant sur la Freebox, accessible via le tunnel WireGuard. Le host est l'IP WireGuard de la Freebox (variable `FREEBOX_WG_IP`), pas un nom de conteneur Docker.
 
 4. Cliquer sur **Test** puis **Save**
 
@@ -647,15 +615,15 @@ Acceder a `https://sonarr.DOMAIN`.
 La configuration est identique a Radarr :
 
 1. **Verifier les indexeurs** : s'ils sont synchronises via Prowlarr, ils apparaissent automatiquement
-2. **Ajouter qBittorrent** : meme configuration que Radarr (host: `gluetun`, port: `8080`)
+2. **Ajouter qBittorrent** : meme configuration que Radarr (host: `${FREEBOX_WG_IP}`, port: `8080`)
 3. **Creer un profil de qualite** similaire a celui de Radarr
 4. **Root Folder** : `/data/media/series`
 
-### 4.4 Overseerr - Interface de demande
+### 4.4 Seerr - Interface de demande
 
-Acceder a `https://overseerr.DOMAIN`.
+Acceder a `https://seerr.DOMAIN`.
 
-> **Note** : Overseerr utilise son authentification interne (pas de SSO Authelia). C'est plus simple pour les amis et la famille qui n'ont pas besoin de 2FA.
+> **Note** : Seerr utilise son authentification interne (pas de SSO Authelia). C'est plus simple pour les amis et la famille qui n'ont pas besoin de 2FA.
 
 **Configuration initiale** :
 
@@ -687,7 +655,7 @@ Homepage sert de tableau de bord centralise pour acceder rapidement a tous les s
 
 Homepage se configure via des fichiers YAML dans le repertoire `config/homepage/` :
 
-- **`services.yaml`** : definition des services affiches sur le dashboard (Sonarr, Radarr, Overseerr, qBittorrent, etc.)
+- **`services.yaml`** : definition des services affiches sur le dashboard (Sonarr, Radarr, Seerr, qBittorrent, etc.)
 - **`widgets.yaml`** : widgets d'information (systeme, recherche, etc.)
 - **`settings.yaml`** : parametres generaux du dashboard (titre, theme, layout, etc.)
 
@@ -701,7 +669,7 @@ Les cles API des services sont passees en variables d'environnement (`HOMEPAGE_R
 
 ### 5.1 Demander un film ou une serie
 
-1. Ouvrir **Overseerr** (`https://overseerr.DOMAIN`)
+1. Ouvrir **Seerr** (`https://seerr.DOMAIN`)
 2. Utiliser la barre de recherche pour trouver un film ou une serie
 3. Cliquer sur le resultat souhaite
 4. Cliquer sur **Request**
@@ -713,29 +681,24 @@ La demande est automatiquement transmise a Radarr (films) ou Sonarr (series), qu
 
 Plusieurs endroits pour suivre l'avancement :
 
-- **Overseerr** : la demande passe de "Requested" a "Available" quand tout est pret
+- **Seerr** : la demande passe de "Requested" a "Available" quand tout est pret
 - **Radarr/Sonarr** : onglet **Activity** pour voir l'etat du telechargement
 - **qBittorrent** (`https://qbittorrent.DOMAIN`) : detail complet du torrent (vitesse, progression, peers)
 
-### 5.3 Verifier la synchronisation
+### 5.3 Verifier les fichiers
 
-La synchronisation VPS vers Freebox se fait automatiquement :
+Les fichiers sont maintenant telecharges directement sur le NVMe Freebox via qBittorrent. Plus besoin de synchronisation -- Sonarr/Radarr accedent aux fichiers via NFS.
 
-- **Conteneur rclone** : sync automatique toutes les **minutes**
-- **sync-watch.sh** (optionnel) : detection en temps reel via inotify
-
-Pour verifier manuellement :
+Pour verifier :
 
 ```bash
-# Voir les logs de synchronisation rclone
-docker logs -f rclone
+# Verifier le montage NFS
+df -h /mnt/freebox
 
-# Verifier les fichiers sur le VPS
-ls -la /data/media/films/
-ls -la /data/media/series/
+# Verifier les fichiers
+ls -la /mnt/freebox/media/films/
+ls -la /mnt/freebox/media/series/
 ```
-
-La synchronisation est transparente : une fois le telechargement termine et le fichier deplace par Sonarr/Radarr dans `/data/media/`, rclone le detecte et le transfere vers la Freebox via le tunnel WireGuard chiffre.
 
 ### 5.4 Acceder au contenu
 
@@ -749,7 +712,7 @@ Apres avoir tout installe et configure, voici le scenario de test complet pour v
 
 ### Etape 1 : Faire une demande
 
-1. Ouvrir **Overseerr** (`https://overseerr.DOMAIN`)
+1. Ouvrir **Seerr** (`https://seerr.DOMAIN`)
 2. Chercher un film recent disponible en 4K (ex: un blockbuster recent)
 3. Cliquer sur **Request**
 
@@ -762,31 +725,31 @@ Apres avoir tout installe et configure, voici le scenario de test complet pour v
 ### Etape 3 : Verifier le telechargement
 
 1. Ouvrir **qBittorrent** (`https://qbittorrent.DOMAIN`)
-2. Verifier que le torrent est actif et en cours de telechargement
-3. **Verifier que l'IP est celle de Mullvad** (pas l'IP du VPS) :
+2. Verifier que le torrent est actif et en cours de telechargement sur la Freebox
+3. **Verifier que l'IP est celle de Mullvad** (pas l'IP de la Freebox) :
 
 ```bash
-# Sur le VPS
+# Sur la Freebox (ou via SSH sur la VM Freebox)
 docker exec gluetun wget -qO- https://ipinfo.io/json
 ```
 
-Le resultat doit montrer une IP Mullvad (pas l'IP de ton VPS).
+Le resultat doit montrer une IP Mullvad (pas l'IP de ta Freebox).
 
-### Etape 4 : Verifier la synchronisation
+### Etape 4 : Verifier le montage NFS
 
 1. Attendre que le telechargement soit termine
-2. Verifier que Radarr a deplace le fichier dans `/data/media/films/`
-3. Verifier les logs rclone :
+2. Verifier que le montage NFS est actif sur le VPS :
 
 ```bash
-docker logs rclone --tail 20
+df -h /mnt/freebox
+systemctl status mnt-freebox.mount
 ```
 
-4. Attendre le prochain cycle de sync (max 1 min) ou verifier que le fichier est synchronise
+3. Verifier que Radarr a deplace le fichier dans `/mnt/freebox/media/films/`
 
 ### Etape 5 : Verifier sur la Freebox
 
-1. Verifier que le fichier est present sur le NVMe (`/mnt/NVMe/media/films/`)
+1. Verifier que le fichier est present sur le NVMe (`/mnt/freebox/media/films/`)
 2. Lancer la lecture via le player Freebox pour confirmer que tout fonctionne
 
 Si toutes les etapes sont validees, ta stack est operationnelle.
@@ -798,7 +761,7 @@ Si toutes les etapes sont validees, ta stack est operationnelle.
 ### Verification du VPN
 
 ```bash
-# Verifier que qBittorrent tourne bien derriere le VPN Mullvad
+# Sur la Freebox (ou via SSH sur la VM Freebox)
 docker exec gluetun wget -qO- https://ipinfo.io/json
 ```
 
@@ -812,16 +775,20 @@ wg show wg-freebox
 ping -c 3 FREEBOX_WG_IP
 ```
 
+### Verification du montage NFS
+
+```bash
+# Verifier le montage NFS
+df -h /mnt/freebox
+systemctl status mnt-freebox.mount
+```
+
 ### Logs des services
 
 ```bash
-# Logs de synchronisation rclone
-docker logs -f rclone
-
 # Logs d'un service specifique
 docker logs -f sonarr
 docker logs -f radarr
-docker logs -f gluetun
 
 # Status de tous les services
 docker compose ps
@@ -856,32 +823,16 @@ nginx -t
 nginx -t && systemctl reload nginx
 ```
 
-### Sync avancee (optionnel)
-
-Le script `sync-watch.sh` offre une synchronisation en temps reel en complement du conteneur rclone :
-
-```bash
-# Lancer en arriere-plan sur le VPS
-nohup bash scripts/sync-watch.sh &
-```
-
-Fonctionnalites :
-
-- Detection instantanee des nouveaux fichiers via inotify
-- Verification de stabilite du fichier (30 secondes)
-- Retry automatique avec backoff exponentiel (10s, 30s, 90s)
-- Notifications webhook Discord/Slack
-- Sync complete de secours toutes les heures
-
 ---
 
 ## 8. Depannage
 
 ### qBittorrent ne demarre pas
 
-qBittorrent depend de Gluetun (le VPN). Si Gluetun n'est pas healthy, qBittorrent ne demarrera pas.
+qBittorrent tourne sur la Freebox et depend de Gluetun (le VPN). Si Gluetun n'est pas healthy, qBittorrent ne demarrera pas.
 
 ```bash
+# Sur la Freebox (ou via SSH sur la VM Freebox)
 # Verifier l'etat de Gluetun
 docker logs gluetun --tail 30
 
@@ -890,7 +841,7 @@ docker inspect --format='{{.State.Health.Status}}' gluetun
 ```
 
 Causes possibles :
-- Cle WireGuard Mullvad incorrecte dans `.env`
+- Cle WireGuard Mullvad incorrecte dans le `.env` Freebox
 - Serveur Mullvad indisponible (changer `SERVER_COUNTRIES` dans `docker-compose.yml`)
 
 ### Le tunnel WireGuard ne fonctionne pas
@@ -907,17 +858,23 @@ Causes possibles :
 - Le serveur WireGuard n'est pas active sur la Freebox
 - L'IP publique de la Freebox a change (mettre a jour `WG_FREEBOX_ENDPOINT`)
 
-### rclone ne synchronise pas
+### Le montage NFS ne fonctionne pas
 
 ```bash
-# Verifier les logs
-docker logs rclone --tail 30
+# Verifier le status du montage
+systemctl status mnt-freebox.mount
+
+# Verifier la connectivite vers la Freebox
+ping -c 3 FREEBOX_WG_IP
+
+# Tenter un remontage
+systemctl restart mnt-freebox.mount
 ```
 
 Causes possibles :
-- La cle SSH n'est pas dans `authorized_key` cote Freebox
 - Le tunnel WireGuard est inactif
-- Le conteneur SFTP n'est pas demarre sur la Freebox
+- Le serveur NFS n'est pas demarre sur la Freebox (verifier avec `nfs-setup.sh`)
+- Le pare-feu de la Freebox bloque le port 2049
 
 ### Les fichiers n'apparaissent pas sur la Freebox
 

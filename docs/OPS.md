@@ -118,7 +118,7 @@ journalctl -u docker --since "1 hour ago"
 
 ### Verifier que le VPN fonctionne
 
-Le conteneur Gluetun a un healthcheck integre qui verifie l'IP publique via `ipinfo.io`.
+Le conteneur Gluetun a un healthcheck integre qui verifie que l'interface `tun0` est UP.
 
 ```bash
 # Verifier l'IP vue par qBittorrent (doit etre Mullvad, PAS l'IP du VPS)
@@ -156,7 +156,7 @@ Si `latest handshake` est absent ou superieur a 5 minutes, le tunnel est down.
 ### Verifier la sync rclone
 
 ```bash
-# Logs du conteneur rclone (move toutes les minutes)
+# Logs du conteneur rclone (move toutes les 10s)
 docker logs rclone --tail 50
 
 # Verifier la derniere sync reussie
@@ -178,20 +178,20 @@ docker compose ps --format "table {{.Name}}\t{{.Status}}" | grep -i restarting
 
 | Service | Port local | Healthcheck |
 |---|---|---|
-| gluetun | - | `wget -qO- http://ipinfo.io/ip` (30s interval) |
+| gluetun | - | `ip link show tun0 \| grep -q UP` (30s interval) |
 | qbittorrent | 8080 (via gluetun) | `curl -f http://localhost:8080` (30s interval) |
 | prowlarr | 9696 | `curl -f http://localhost:9696/ping` (30s interval) |
 | sonarr | 8989 | `curl -f http://localhost:8989/ping` (30s interval) |
 | radarr | 7878 | `curl -f http://localhost:7878/ping` (30s interval) |
-| overseerr | 5055 | `curl -f http://localhost:5055/api/v1/status` (30s interval) |
+| seerr | 5055 | `wget -qO- http://localhost:5055/api/v1/status` (30s interval) |
 | homepage | 7575 | `wget -qO- http://localhost:3000` (30s interval) |
 | authelia | 9091 | `wget -qO- http://localhost:9091/api/health` (30s interval) |
-| rclone | - | `kill -0 1` (60s interval) |
+| rclone | - | `pgrep -f 'rclone\|sleep'` (60s interval) |
 | fail2ban | host | `pgrep fail2ban` (30s interval) |
-| dozzle | 9999 | `wget -qO- http://localhost:8080/` (30s interval) |
-| byparr | 8192 | `wget -qO- http://localhost:8191/health` (30s interval) |
+| dozzle | 9999 | `/dozzle healthcheck` (120s interval) |
+| byparr | 8192 | `curl -f http://localhost:8191/health` (30s interval) |
 | jackett | 9117 | `curl -f http://localhost:9117/UI/Dashboard` (30s interval) |
-| watchtower | - | `pgrep watchtower` (60s interval) |
+| watchtower | - | `/watchtower --health-check` (120s interval) |
 
 ### Verifier fail2ban
 
@@ -506,7 +506,7 @@ docker compose ps <service>
 
 # 2. Tester le port local
 curl -s http://127.0.0.1:<port>
-# Ports : sonarr=8989, radarr=7878, prowlarr=9696, overseerr=5055, homepage=7575 (->3000), qbittorrent=8080
+# Ports : sonarr=8989, radarr=7878, prowlarr=9696, seerr=5055, homepage=7575 (->3000), qbittorrent=8080
 
 # 3. Tester la config nginx
 nginx -t
@@ -761,14 +761,14 @@ docker restart authelia
 
 ## 5. Sync avancee (sync-watch.sh)
 
-Le script `vps/scripts/sync-watch.sh` offre une alternative a la sync rclone en boucle (toutes les minutes). Il utilise `inotify` pour detecter les nouveaux fichiers en temps reel.
+Le script `vps/scripts/sync-watch.sh` offre une alternative a la sync rclone en boucle (toutes les 10 secondes). Il utilise `inotify` pour detecter les nouveaux fichiers en temps reel.
 
 ### Differences avec le conteneur rclone
 
 | | Conteneur rclone | sync-watch.sh |
 |---|---|---|
-| Methode | Boucle `rclone move` toutes les minutes | Detection inotify + sync fichier par fichier |
-| Latence | Jusqu'a 1 min | Quasi instantanee (+ 30s stabilisation) |
+| Methode | Boucle `rclone move` toutes les 10s | Detection inotify + sync fichier par fichier |
+| Latence | Jusqu'a 10s | Quasi instantanee (+ 30s stabilisation) |
 | Execution | Conteneur Docker | Script sur le host |
 | Fallback | - | Sync complete toutes les heures |
 | Retry | Aucun | 3 tentatives avec backoff (10s, 30s, 90s) |
@@ -848,7 +848,7 @@ grep "webhook\|FAILED" /var/log/rclone-sync.log
 | Config Sonarr | `vps/config/sonarr/` | Series suivies, profils, historique |
 | Config Radarr | `vps/config/radarr/` | Films suivis, profils, historique |
 | Config Prowlarr | `vps/config/prowlarr/` | Indexeurs configures |
-| Config Overseerr | `vps/config/overseerr/` | Utilisateurs, demandes |
+| Config Seerr | `vps/config/overseerr/` | Utilisateurs, demandes |
 | Config qBittorrent | `vps/config/qbittorrent/` | Torrents actifs, preferences |
 | Config Homepage | `vps/config/homepage/` | Dashboard personnalise |
 | Config Authelia | `vps/config/authelia/` | SSO, base utilisateurs, sessions |

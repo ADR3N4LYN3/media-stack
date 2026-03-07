@@ -59,13 +59,13 @@ if ! docker compose version &>/dev/null; then
 fi
 ok "Docker Compose $(docker compose version --short)"
 
-# inotifywait (pour sync-watch.sh)
-if ! command -v inotifywait &>/dev/null; then
-    warn "inotifywait non trouvé. Installation..."
-    apt-get update -qq && apt-get install -y -qq inotify-tools
-    ok "inotify-tools installé"
+# NFS client (pour monter les médias Freebox)
+if ! command -v mount.nfs4 &>/dev/null; then
+    warn "nfs-common non trouvé. Installation..."
+    apt-get update -qq && apt-get install -y -qq nfs-common
+    ok "nfs-common installé"
 else
-    ok "inotifywait disponible"
+    ok "nfs-common disponible"
 fi
 
 # WireGuard (tunnel vers Freebox)
@@ -81,7 +81,7 @@ fi
 
 info "Création des répertoires..."
 
-# Charger PUID/PGID depuis .env si disponible, sinon défaut 1000
+# Charger PUID/PGID depuis .env si disponible
 PUID="${PUID:-1000}"
 PGID="${PGID:-1000}"
 
@@ -89,25 +89,19 @@ if [ -f "$PROJECT_DIR/.env" ]; then
     source <(grep -E '^(PUID|PGID)=' "$PROJECT_DIR/.env")
 fi
 
-# Données media
-mkdir -p /data/downloads/complete
-mkdir -p /data/downloads/incomplete
-mkdir -p /data/media/films
-mkdir -p /data/media/series
-chown -R "${PUID}:${PGID}" /data
+# Point de montage NFS Freebox (les données média sont sur la Freebox)
+mkdir -p /mnt/freebox
 
 # Configs des services (permissions correctes dès la création)
 CONFIG_DIRS=(
-    "gluetun"
-    "qbittorrent"
     "prowlarr"
     "sonarr"
     "radarr"
     "overseerr"
     "homepage"
     "jackett"
+    "byparr"
     "authelia"
-    "qbittorrent/custom-services.d"
 )
 
 for dir in "${CONFIG_DIRS[@]}"; do
@@ -117,22 +111,7 @@ done
 chown -R "${PUID}:${PGID}" "$PROJECT_DIR/config"
 ok "Répertoires créés avec permissions ${PUID}:${PGID}"
 
-# ── 3. Génération de la clé SSH pour rclone ──
-
-SSH_KEY="$PROJECT_DIR/config/rclone/id_rsa"
-
-if [ ! -f "$SSH_KEY" ]; then
-    info "Génération de la clé SSH dédiée pour rclone..."
-    mkdir -p "$PROJECT_DIR/config/rclone"
-    ssh-keygen -t ed25519 -f "$SSH_KEY" -N "" -C "media-stack-rclone"
-    chmod 600 "$SSH_KEY"
-    chmod 644 "${SSH_KEY}.pub"
-    ok "Clé SSH Ed25519 générée"
-else
-    ok "Clé SSH déjà existante"
-fi
-
-# ── 4. Copie .env.example → .env ──
+# ── 3. Copie .env.example → .env ──
 
 if [ ! -f "$PROJECT_DIR/.env" ]; then
     cp "$PROJECT_DIR/.env.example" "$PROJECT_DIR/.env"
@@ -141,7 +120,7 @@ else
     ok "Fichier .env déjà présent"
 fi
 
-# ── 5. Charger .env et vérifier les variables CHANGE_ME ──
+# ── 4. Charger .env et vérifier les variables CHANGE_ME ──
 
 info "Vérification des variables d'environnement..."
 
@@ -174,7 +153,7 @@ ok "Toutes les variables sont configurées"
 # Charger les variables
 source "$PROJECT_DIR/.env"
 
-# ── 6. Configuration du tunnel WireGuard vers la Freebox ──
+# ── 5. Configuration du tunnel WireGuard vers la Freebox ──
 
 WG_CONF="/etc/wireguard/wg-freebox.conf"
 
@@ -216,49 +195,35 @@ else
     warn "Freebox non joignable via ${FREEBOX_WG_IP} — vérifie que le serveur WireGuard est actif sur la Freebox"
 fi
 
-# ── 7. Génération rclone.conf depuis le template ──
+# ── 6. Montage NFS Freebox (médias via WireGuard) ──
 
-info "Génération de rclone.conf..."
+info "Configuration du montage NFS Freebox..."
 
-RCLONE_CONF="$PROJECT_DIR/config/rclone/rclone.conf"
-RCLONE_TEMPLATE="$PROJECT_DIR/config/rclone/rclone.conf.template"
+NFS_MOUNT_UNIT="/etc/systemd/system/mnt-freebox.mount"
 
-if [ -f "$RCLONE_TEMPLATE" ]; then
-    sed \
-        -e "s|FREEBOX_WG_IP_PLACEHOLDER|${FREEBOX_WG_IP}|g" \
-        -e "s|FREEBOX_SFTP_USER_PLACEHOLDER|${FREEBOX_SFTP_USER}|g" \
-        -e "s|FREEBOX_SFTP_PORT_PLACEHOLDER|${FREEBOX_SFTP_PORT}|g" \
-        "$RCLONE_TEMPLATE" > "$RCLONE_CONF"
-    ok "rclone.conf généré"
+if [ ! -f "$NFS_MOUNT_UNIT" ]; then
+    sed "s|FREEBOX_WG_IP_PLACEHOLDER|${FREEBOX_WG_IP}|g" \
+        "$PROJECT_DIR/systemd/mnt-freebox.mount" > "$NFS_MOUNT_UNIT"
+    systemctl daemon-reload
+    systemctl enable mnt-freebox.mount
+    ok "Unit systemd mnt-freebox.mount installée"
 else
-    die "Template rclone.conf.template introuvable"
+    ok "Unit systemd mnt-freebox.mount déjà existante"
 fi
 
-# ── 8. Scan de la clé hôte SFTP Freebox (via tunnel) ──
-
-KNOWN_HOSTS="$PROJECT_DIR/config/rclone/known_hosts"
-
-info "Scan de la clé hôte SFTP Freebox (${FREEBOX_WG_IP}:${FREEBOX_SFTP_PORT})..."
-if ssh-keyscan -p "${FREEBOX_SFTP_PORT}" -H "${FREEBOX_WG_IP}" >> "$KNOWN_HOSTS" 2>/dev/null; then
-    ok "Clé hôte SFTP ajoutée à known_hosts"
+# Tenter le montage
+if ! mountpoint -q /mnt/freebox; then
+    info "Montage NFS /mnt/freebox..."
+    if systemctl start mnt-freebox.mount 2>/dev/null; then
+        ok "NFS monté sur /mnt/freebox"
+    else
+        warn "Montage NFS échoué — vérifie que le NFS server est actif sur la Freebox (bash nfs-setup.sh)"
+    fi
 else
-    warn "Impossible de scanner — le conteneur SFTP n'est peut-être pas encore lancé sur la Freebox"
+    ok "NFS déjà monté sur /mnt/freebox"
 fi
 
-# ── 9. Affichage de la clé publique SSH (pour le conteneur SFTP Freebox) ──
-
-echo ""
-echo "═══════════════════════════════════════════"
-echo "  Clé publique SSH à copier sur la Freebox"
-echo "═══════════════════════════════════════════"
-echo ""
-echo -e "${CYAN}"
-cat "${SSH_KEY}.pub"
-echo -e "${NC}"
-echo "→ Colle cette clé dans le setup-freebox.sh (ou dans freebox/config/sftp/ssh/authorized_key)"
-echo ""
-
-# ── 10. Configuration Authelia SSO ──
+# ── 7. Configuration Authelia SSO ──
 
 info "Configuration Authelia..."
 
@@ -279,7 +244,7 @@ AUTHELIA_USERS_TEMPLATE="$PROJECT_DIR/config/authelia/users_database.yml"
 
 if grep -q "AUTHELIA_HASH_PLACEHOLDER" "$AUTHELIA_USERS_DB" 2>/dev/null; then
     info "Génération du hash Argon2id pour Authelia..."
-    AUTHELIA_HASH=$(docker run --rm --entrypoint authelia authelia/authelia:latest crypto hash generate argon2 --password "${AUTHELIA_PASSWORD}" 2>/dev/null | grep 'Digest:' | awk '{print $2}')
+    AUTHELIA_HASH=$(echo -n "${AUTHELIA_PASSWORD}" | docker run --rm -i --entrypoint authelia authelia/authelia:latest crypto hash generate argon2 --stdin 2>/dev/null | grep 'Digest:' | awk '{print $2}')
     if [ -z "$AUTHELIA_HASH" ]; then
         die "Impossible de générer le hash Authelia. Vérifie que Docker fonctionne."
     fi
@@ -295,7 +260,7 @@ fi
 
 ok "Authelia configuré pour le domaine ${DOMAIN}"
 
-# ── 11. Configuration nginx reverse proxy ──
+# ── 8. Configuration nginx reverse proxy ──
 
 info "Configuration nginx..."
 
@@ -315,19 +280,22 @@ if [ ! -f /etc/ssl/cloudflare/cert.pem ] || [ ! -f /etc/ssl/cloudflare/key.pem ]
     echo "  Puis place-les dans /etc/ssl/cloudflare/cert.pem et key.pem"
 fi
 
-# Installer les snippets Authelia pour nginx
+# Installer les snippets nginx (SSL commun + Authelia)
 SNIPPETS_DIR="/etc/nginx/snippets"
 mkdir -p "$SNIPPETS_DIR"
+cp "$PROJECT_DIR/nginx/snippets/ssl-common.conf" "$SNIPPETS_DIR/"
 cp "$PROJECT_DIR/nginx/snippets/authelia-location.conf" "$SNIPPETS_DIR/"
 sed "s|DOMAIN_PLACEHOLDER|${DOMAIN}|g" "$PROJECT_DIR/nginx/snippets/authelia-authrequest.conf" > "$SNIPPETS_DIR/authelia-authrequest.conf"
-ok "Snippets Authelia installés dans $SNIPPETS_DIR"
+ok "Snippets nginx installés dans $SNIPPETS_DIR"
 
 # Générer la config nginx depuis le template
 NGINX_TEMPLATE="$PROJECT_DIR/nginx/media-stack.conf.template"
 NGINX_CONF="/etc/nginx/sites-available/media-stack"
 
 if [ -f "$NGINX_TEMPLATE" ]; then
-    sed "s|DOMAIN_PLACEHOLDER|${DOMAIN}|g" "$NGINX_TEMPLATE" > "$NGINX_CONF"
+    sed -e "s|DOMAIN_PLACEHOLDER|${DOMAIN}|g" \
+        -e "s|FREEBOX_WG_IP_PLACEHOLDER|${FREEBOX_WG_IP}|g" \
+        "$NGINX_TEMPLATE" > "$NGINX_CONF"
     rm -f /etc/nginx/sites-enabled/default
     ln -sf "$NGINX_CONF" /etc/nginx/sites-enabled/media-stack
     ok "Config nginx générée pour *.${DOMAIN}"
@@ -343,7 +311,7 @@ else
     warn "Erreur dans la config nginx — vérifie avec : nginx -t"
 fi
 
-# ── 12. Durcissement système ──
+# ── 9. Durcissement système ──
 
 if [ -f "$SCRIPT_DIR/harden.sh" ]; then
     read -rp "Lancer le durcissement système (harden.sh) ? [o/N] " harden_confirm
@@ -354,7 +322,7 @@ if [ -f "$SCRIPT_DIR/harden.sh" ]; then
     fi
 fi
 
-# ── 13. Confirmation avant lancement ──
+# ── 10. Confirmation avant lancement ──
 
 echo ""
 read -rp "Lancer docker compose up -d ? [o/N] " confirm
@@ -363,16 +331,16 @@ if [[ ! "$confirm" =~ ^[oOyY]$ ]]; then
     exit 0
 fi
 
-# ── 15. Lancement ──
+# ── 11. Lancement ──
 
 info "Démarrage des services..."
 docker compose up -d
 
-# ── 16. Attente healthchecks ──
+# ── 12. Attente healthchecks ──
 
 info "Attente des healthchecks (timeout 120s)..."
 
-SERVICES_TO_CHECK=("gluetun" "prowlarr" "authelia")
+SERVICES_TO_CHECK=("prowlarr" "authelia")
 TIMEOUT=120
 ELAPSED=0
 
@@ -394,7 +362,7 @@ for svc in "${SERVICES_TO_CHECK[@]}"; do
     ELAPSED=0
 done
 
-# ── 17. Résumé ──
+# ── 13. Résumé ──
 
 DOMAIN="${DOMAIN:-localhost}"
 
@@ -404,15 +372,16 @@ echo "  Services démarrés !"
 echo "═══════════════════════════════════════════"
 echo ""
 printf "  ${GREEN}%-15s${NC} %s\n" "Authelia"    "https://auth.${DOMAIN}"
-printf "  ${GREEN}%-15s${NC} %s\n" "Overseerr"   "https://overseerr.${DOMAIN}"
+printf "  ${GREEN}%-15s${NC} %s\n" "Seerr"       "https://seerr.${DOMAIN}"
 printf "  ${GREEN}%-15s${NC} %s\n" "Homepage"    "https://home.${DOMAIN}"
 printf "  ${GREEN}%-15s${NC} %s\n" "Sonarr"      "https://sonarr.${DOMAIN}"
 printf "  ${GREEN}%-15s${NC} %s\n" "Radarr"      "https://radarr.${DOMAIN}"
 printf "  ${GREEN}%-15s${NC} %s\n" "Prowlarr"    "https://prowlarr.${DOMAIN}"
-printf "  ${GREEN}%-15s${NC} %s\n" "qBittorrent" "https://qbittorrent.${DOMAIN}"
+printf "  ${GREEN}%-15s${NC} %s\n" "qBittorrent" "https://qbittorrent.${DOMAIN} (via Freebox)"
 printf "  ${GREEN}%-15s${NC} %s\n" "Jackett"     "https://jackett.${DOMAIN}"
+printf "  ${GREEN}%-15s${NC} %s\n" "NFS Freebox" "/mnt/freebox (${FREEBOX_WG_IP}:/data)"
 echo ""
-echo "  DNS requis : auth, overseerr, home, sonarr, radarr, prowlarr, qbittorrent, jackett, logs → A record vers IP VPS"
+echo "  DNS requis : auth, seerr, home, sonarr, radarr, prowlarr, qbittorrent, jackett, logs → A record vers IP VPS"
 echo ""
-echo "  Prochaine étape : Authelia (2FA) → Prowlarr → Sonarr/Radarr → Overseerr → Homepage"
+echo "  Prochaine étape : Authelia (2FA) → Prowlarr → Sonarr/Radarr (download client: ${FREEBOX_WG_IP}:8080) → Seerr → Homepage"
 echo ""
