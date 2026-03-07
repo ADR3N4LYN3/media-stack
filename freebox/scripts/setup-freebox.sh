@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ═══════════════════════════════════════════
-# Media Stack Freebox — Script d'installation v2
+# Media Stack Freebox — Script d'installation v3
 # ═══════════════════════════════════════════
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -50,27 +50,19 @@ info "Création des répertoires..."
 PUID="${PUID:-1000}"
 PGID="${PGID:-1000}"
 
-# Lire MEDIA_PATH depuis .env si disponible
 if [ -f "$PROJECT_DIR/.env" ]; then
-    MEDIA_PATH="$(grep -E '^MEDIA_PATH=' "$PROJECT_DIR/.env" | cut -d'=' -f2- | xargs)"
+    source <(grep -E '^(PUID|PGID|DATA_PATH|MEDIA_PATH)=' "$PROJECT_DIR/.env")
 fi
-MEDIA_PATH="${MEDIA_PATH:-/mnt/NVMe/media}"
 
-mkdir -p "$MEDIA_PATH"
+DATA_PATH="${DATA_PATH:-/data}"
+MEDIA_PATH="${MEDIA_PATH:-$DATA_PATH/media}"
 
-chown -R "${PUID}:${PGID}" "$MEDIA_PATH"
+mkdir -p "$DATA_PATH/downloads/complete" "$DATA_PATH/downloads/incomplete" "$MEDIA_PATH"
+chown -R "${PUID}:${PGID}" "$DATA_PATH"
 
-ok "Répertoire $MEDIA_PATH créé avec permissions ${PUID}:${PGID}"
+ok "Répertoires créés dans $DATA_PATH avec permissions ${PUID}:${PGID}"
 
-# ── 3. Configuration SFTP (conteneur openssh-server) ──
-
-info "Configuration du conteneur SFTP..."
-
-mkdir -p "$PROJECT_DIR/config/sftp/ssh"
-
-ok "Répertoire config SFTP créé"
-
-# ── 4. Copie .env.example → .env ──
+# ── 3. Copie .env.example → .env ──
 
 if [ ! -f "$PROJECT_DIR/.env" ]; then
     cp "$PROJECT_DIR/.env.example" "$PROJECT_DIR/.env"
@@ -79,7 +71,7 @@ else
     ok "Fichier .env déjà présent"
 fi
 
-# ── 5. Vérification des variables CHANGE_ME ──
+# ── 4. Vérification des variables CHANGE_ME ──
 
 info "Vérification des variables..."
 
@@ -109,33 +101,16 @@ ok "Toutes les variables sont configurées"
 
 source "$PROJECT_DIR/.env"
 
-# ── 6. Ajout clé SSH publique du VPS (pour SFTP) ──
+# ── 5. Vérification /dev/net/tun (requis pour Gluetun) ──
 
-AUTHORIZED_KEY="$PROJECT_DIR/config/sftp/ssh/authorized_key"
-
-echo ""
-echo "═══════════════════════════════════════════"
-echo "  Clé SSH du VPS (pour SFTP via WireGuard)"
-echo "═══════════════════════════════════════════"
-echo ""
-echo "Colle la clé publique SSH du VPS (affichée par setup.sh côté VPS) :"
-echo "(Laisse vide et appuie sur Entrée pour passer)"
-echo ""
-read -rp "Clé publique : " ssh_pubkey
-
-if [ -n "$ssh_pubkey" ]; then
-    if [ ! -f "$AUTHORIZED_KEY" ] || ! grep -qF "$ssh_pubkey" "$AUTHORIZED_KEY" 2>/dev/null; then
-        echo "$ssh_pubkey" > "$AUTHORIZED_KEY"
-        chmod 644 "$AUTHORIZED_KEY"
-        ok "Clé SSH ajoutée pour le conteneur SFTP"
-    else
-        ok "Clé SSH déjà présente"
-    fi
+info "Vérification de /dev/net/tun..."
+if [ -c /dev/net/tun ]; then
+    ok "/dev/net/tun disponible"
 else
-    warn "Clé SSH ignorée. Ajoute-la manuellement dans config/sftp/ssh/authorized_key"
+    die "/dev/net/tun non disponible — Gluetun ne pourra pas démarrer"
 fi
 
-# ── 7. Lancement ──
+# ── 6. Lancement ──
 
 echo ""
 read -rp "Lancer docker compose up -d ? [o/N] " confirm
@@ -144,18 +119,39 @@ if [[ ! "$confirm" =~ ^[oOyY]$ ]]; then
     exit 0
 fi
 
-info "Démarrage du conteneur SFTP..."
+info "Démarrage des services..."
 docker compose up -d
+
+# ── 7. Attente healthcheck Gluetun ──
+
+info "Attente du healthcheck Gluetun (timeout 120s)..."
+TIMEOUT=120
+ELAPSED=0
+while [ $ELAPSED -lt $TIMEOUT ]; do
+    status=$(docker inspect --format='{{.State.Health.Status}}' gluetun 2>/dev/null || echo "unknown")
+    if [ "$status" = "healthy" ]; then
+        ok "Gluetun est healthy (VPN connecté)"
+        break
+    fi
+    sleep 5
+    ELAPSED=$((ELAPSED + 5))
+    echo -ne "\r  Attente de gluetun... ${ELAPSED}s / ${TIMEOUT}s"
+done
+if [ $ELAPSED -ge $TIMEOUT ]; then
+    echo ""
+    warn "Gluetun n'est pas healthy après ${TIMEOUT}s — vérifie les logs : docker logs gluetun"
+fi
 
 # ── 8. Résumé ──
 
 echo ""
 echo "═══════════════════════════════════════════"
-echo "  SFTP démarré !"
+echo "  Services démarrés !"
 echo "═══════════════════════════════════════════"
 echo ""
-echo -e "  ${GREEN}SFTP${NC}  → port 2222 (via tunnel WireGuard)"
+echo -e "  ${GREEN}Gluetun${NC}      → VPN Mullvad (tunnel WireGuard)"
+echo -e "  ${GREEN}qBittorrent${NC}  → WebUI sur ${FREEBOX_WG_IP:-localhost}:8080"
+echo -e "  ${GREEN}Jellyfin${NC}     → http://localhost:8096"
 echo ""
-echo "  Les médias synchronisés par rclone seront disponibles"
-echo "  directement via le player Freebox sur le NVMe interne."
+echo "  Vérifier l'IP VPN : docker exec gluetun wget -qO- https://ipinfo.io/json"
 echo ""

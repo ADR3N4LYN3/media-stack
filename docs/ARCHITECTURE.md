@@ -19,7 +19,7 @@ Documentation detaillee de l'architecture du projet media-stack : infrastructure
 
 L'architecture repose sur deux noeuds physiques relies par un tunnel WireGuard chiffre :
 
-- **VPS Hetzner AX22** (Helsinki) : gestion des medias, reverse proxy HTTPS. Accede aux fichiers Freebox via NFS sur tunnel WireGuard
+- **VPS Hetzner AX22** (Helsinki) : gestion des medias, reverse proxy HTTPS. Accede aux fichiers Freebox via CIFS/SMB sur tunnel WireGuard
 - **Freebox Ultra** (domicile) : telechargement automatise derriere VPN Mullvad, stockage NVMe interne, lecture 4K via le player Freebox integre
 
 ```
@@ -44,7 +44,7 @@ L'architecture repose sur deux noeuds physiques relies par un tunnel WireGuard c
     |         +--------+----+-------+                        |
     |                  |                                     |
     |           API qBittorrent -----+                       |
-    |           NFS /mnt/freebox ----+                       |
+    |           CIFS /mnt/freebox ---+                       |
     |                                |                       |
     |     [fail2ban]  [watchtower]   | tunnel WireGuard      |
     |                                | (wg-freebox:22563)    |
@@ -57,8 +57,7 @@ L'architecture repose sur deux noeuds physiques relies par un tunnel WireGuard c
     |                        |                               |
     |                  [qbittorrent]                         |
     |                        |                               |
-    |               [NFS Server] <--- port 2049              |
-    |                  [sftp] <--- port 2222                 |
+    |              [SMB/NVMe share] ← via routeur Freebox      |
     |                    [jellyfin]                          |
     |                        |                               |
     |                 NVMe interne                           |
@@ -90,8 +89,7 @@ L'architecture repose sur deux noeuds physiques relies par un tunnel WireGuard c
 | Byparr | VPS | Bypass Cloudflare pour Prowlarr (remplace FlareSolverr) |
 | Jackett | VPS | Indexeur torrent supplementaire |
 | Watchtower | VPS | Mise a jour automatique des images Docker |
-| NFS Server | Freebox | Export NFS des donnees media vers le VPS via WireGuard |
-| SFTP | Freebox | Reception des fichiers depuis le VPS (legacy, conserve pour autres usages) |
+| SMB (routeur Freebox) | Freebox | Partage NVMe via SMB, monte en CIFS sur le VPS via WireGuard |
 
 ---
 
@@ -123,7 +121,7 @@ Gestion automatisee des series TV.
 | Image | `linuxserver/sonarr:latest` |
 | Ports | `127.0.0.1:8989:8989` |
 | Reseau | `media_network` |
-| Volumes | `./config/sonarr:/config`, `${DATA_PATH}:/data` |
+| Volumes | `./config/sonarr:/config`, `/mnt/freebox:/data` |
 | Dependance | `prowlarr` (condition: `service_healthy`) |
 | Security | `no-new-privileges:true` |
 
@@ -136,7 +134,7 @@ Gestion automatisee des films.
 | Image | `linuxserver/radarr:latest` |
 | Ports | `127.0.0.1:7878:7878` |
 | Reseau | `media_network` |
-| Volumes | `./config/radarr:/config`, `${DATA_PATH}:/data` |
+| Volumes | `./config/radarr:/config`, `/mnt/freebox:/data` |
 | Dependance | `prowlarr` (condition: `service_healthy`) |
 | Security | `no-new-privileges:true` |
 
@@ -314,28 +312,13 @@ Client torrent, isole derriere le VPN Gluetun. Telecharge directement sur le NVM
 | Dependance | `gluetun` (condition: `service_healthy`) |
 | Volumes | `./config/qbittorrent:/config`, `${DATA_PATH}:/data` |
 
-### 3. NFS Server (natif, pas un conteneur)
+### 3. SMB / CIFS (natif, pas un conteneur)
 
-Export NFS des donnees media vers le VPS via le tunnel WireGuard.
+Le NVMe de la Freebox est partage via SMB par le routeur Freebox (adresse `192.168.1.254`). Le VPS monte ce partage en CIFS via le tunnel WireGuard.
 
-- Installe via `nfs-kernel-server` sur la VM Freebox
-- Exporte `/data` vers l'IP WireGuard du VPS uniquement
-- Options : `rw,sync,no_subtree_check,all_squash,anonuid=1000,anongid=1000`
-
-### 4. SFTP
-
-Serveur SFTP (legacy, conserve pour autres usages).
-
-| Propriete | Valeur |
-|---|---|
-| Image | `lscr.io/linuxserver/openssh-server:latest` |
-| Ports | `2222:2222` |
-| Volumes | `./config/sftp:/config`, `${MEDIA_PATH}:/data` |
-
-**Securite :**
-- Acces sudo : desactive
-- Authentification par mot de passe : desactivee
-- Authentification : cle publique SSH uniquement (`PUBLIC_KEY_FILE`)
+- Partage : `//192.168.1.254/NVMe`
+- Monte sur le VPS : `/mnt/freebox`
+- Options fstab : `credentials=/etc/cifs-credentials,uid=1000,gid=1000,vers=3.0,_netdev,x-systemd.automount`
 - Accessible uniquement via le tunnel WireGuard (pas d'exposition Internet)
 
 ---
@@ -381,7 +364,7 @@ VPS (host)                                    Freebox Ultra
 ```
 
 - Configure par `setup.sh` au deploiement (interface `wg-freebox` sur le host)
-- Utilise par le VPS pour monter le NFS Freebox (`/mnt/freebox`) et acceder a l'API qBittorrent
+- Utilise par le VPS pour monter le partage CIFS Freebox (`/mnt/freebox`) et acceder a l'API qBittorrent
 - Le serveur WireGuard est natif a la Freebox (active dans Freebox OS)
 
 ### Nginx reverse proxy
@@ -448,11 +431,11 @@ Sonarr/Radarr                               Player Freebox
      |                                           |
      v                                           v
  Sonarr/Radarr detectent via API,           Le player Freebox
- accedent aux fichiers via NFS              lit directement
+ accedent aux fichiers via CIFS             lit directement
  (/mnt/freebox), renomment et              les fichiers sur
  creent des hardlinks vers                  le NVMe interne
- /data/media/films/ ou                      en 4K direct
- /data/media/series/                        play
+ /data/Vidéos/                              en 4K direct
+                                            play
 ```
 
 ### Detail de chaque etape
@@ -463,7 +446,7 @@ Sonarr/Radarr                               Player Freebox
 
 **3. Telechargement** — qBittorrent telecharge sur le NVMe Freebox (derriere VPN Mullvad via Gluetun sur la Freebox). Les fichiers transitent par `/downloads/incomplete` puis `/downloads/complete`.
 
-**4. Import** — Sonarr/Radarr detectent via API, accedent aux fichiers via NFS (`/mnt/freebox`), renomment et creent des hardlinks vers `/data/media/films/` ou `/data/media/series/`. Plus de transit VPS : les fichiers restent sur le NVMe Freebox.
+**4. Import** — Sonarr/Radarr detectent via API, accedent aux fichiers via CIFS (`/mnt/freebox`), renomment et creent des hardlinks vers `/data/Vidéos/`. Plus de transit VPS : les fichiers restent sur le NVMe Freebox.
 
 **5. Lecture** — Le player integre de la Freebox Ultra lit directement les fichiers sur le stockage NVMe interne. Le contenu est disponible en 4K direct play sur le reseau local.
 
@@ -482,7 +465,7 @@ Couche 3 : Authelia SSO        Portail unique, two_factor (TOTP) sur les service
 Couche 4 : Fail2ban            Ban IP sur echecs SSH et auth
 Couche 5 : SSH durci           Port custom, password desactive, root desactive
 Couche 6 : VPN Mullvad         IP reelle jamais exposee pour les torrents
-Couche 7 : Tunnel WireGuard    Transferts VPS-Freebox chiffres, SFTP non expose
+Couche 7 : Tunnel WireGuard    Transferts VPS-Freebox chiffres, CIFS non expose
 Couche 8 : Docker hardened     no-new-privileges, logs limites, userland-proxy off, socket :ro
 ```
 
@@ -490,8 +473,7 @@ Couche 8 : Docker hardened     no-new-privileges, logs limites, userland-proxy o
 
 - **qBittorrent** (Freebox) : aucune stack reseau propre, tout passe par Gluetun. Si le VPN tombe, le conteneur est totalement isole (kill switch natif).
 - **Ports internes VPS** : tous lies a `127.0.0.1` (9696, 8989, 7878, 5055, 7575, 9091). Aucun service Docker n'est directement accessible depuis Internet.
-- **NFS Freebox** : accessible uniquement via le tunnel WireGuard (port 2049), pas d'exposition sur Internet.
-- **SFTP Freebox** : accessible uniquement via le tunnel WireGuard, pas d'exposition sur Internet.
+- **CIFS Freebox** : partage SMB accessible uniquement via le tunnel WireGuard, pas d'exposition sur Internet.
 
 ### Conteneurs securises
 
@@ -516,7 +498,6 @@ Tous les vhosts appliquent :
 ### Authentification
 
 - **Authelia SSO** : portail unique d'authentification. Tous les services admin en two_factor (TOTP). Seerr utilise son auth interne (exclue d'Authelia). Les endpoints `/api` de Sonarr et Radarr sont exclus pour la communication inter-services (authentification par API key).
-- **SFTP** : cle publique SSH uniquement, mot de passe desactive, sudo desactive.
 - **SSH VPS** : port custom (`SSH_PORT`), authentification par mot de passe desactivee, login root desactive.
 
 ### Mises a jour automatiques

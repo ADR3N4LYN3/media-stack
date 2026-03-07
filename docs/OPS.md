@@ -10,9 +10,8 @@ Guide operationnel pour la maintenance, le monitoring et le depannage de la medi
 2. [Monitoring](#2-monitoring)
 3. [Maintenance](#3-maintenance)
 4. [Troubleshooting](#4-troubleshooting)
-5. [Sync avancee (sync-watch.sh)](#5-sync-avancee-sync-watchsh)
-6. [Sauvegardes](#6-sauvegardes)
-7. [Procedures d'urgence](#7-procedures-durgence)
+5. [Sauvegardes](#5-sauvegardes)
+6. [Procedures d'urgence](#6-procedures-durgence)
 
 ---
 
@@ -26,7 +25,7 @@ cd vps && docker compose ps
 
 # Logs d'un service (temps reel)
 docker logs -f sonarr
-docker logs -f rclone --tail 100
+docker logs -f radarr --tail 100
 
 # Redemarrer un service
 docker compose restart sonarr
@@ -153,19 +152,6 @@ Points a verifier dans la sortie :
 
 Si `latest handshake` est absent ou superieur a 5 minutes, le tunnel est down.
 
-### Verifier la sync rclone
-
-```bash
-# Logs du conteneur rclone (move toutes les 10s)
-docker logs rclone --tail 50
-
-# Verifier la derniere sync reussie
-docker logs rclone 2>&1 | grep "Sync termine"
-
-# Si sync-watch.sh est actif
-tail -50 /var/log/rclone-sync.log
-```
-
 ### Verifier les services
 
 ```bash
@@ -186,7 +172,6 @@ docker compose ps --format "table {{.Name}}\t{{.Status}}" | grep -i restarting
 | seerr | 5055 | `wget -qO- http://localhost:5055/api/v1/status` (30s interval) |
 | homepage | 7575 | `wget -qO- http://localhost:3000` (30s interval) |
 | authelia | 9091 | `wget -qO- http://localhost:9091/api/health` (30s interval) |
-| rclone | - | `pgrep -f 'rclone\|sleep'` (60s interval) |
 | fail2ban | host | `pgrep fail2ban` (30s interval) |
 | dozzle | 9999 | `/dozzle healthcheck` (120s interval) |
 | byparr | 8192 | `curl -f http://localhost:8191/health` (30s interval) |
@@ -322,17 +307,17 @@ nginx -t && systemctl reload nginx
 Pour renouveler la cle WireGuard Mullvad (utilisee par Gluetun pour les torrents) :
 
 1. Generer une nouvelle cle sur le compte Mullvad
-2. Mettre a jour le `.env` du VPS :
+2. Mettre a jour le `.env` de la **Freebox** :
 
 ```bash
-nano <PROJECT_DIR>/vps/.env
+nano <PROJECT_DIR>/freebox/.env
 # Modifier WIREGUARD_PRIVATE_KEY et WIREGUARD_ADDRESSES
 ```
 
-3. Redemarrer Gluetun :
+3. Redemarrer Gluetun sur la **Freebox** :
 
 ```bash
-cd <PROJECT_DIR>/vps && docker compose restart gluetun
+cd <PROJECT_DIR>/freebox && docker compose restart gluetun
 ```
 
 4. Verifier que le VPN fonctionne :
@@ -344,35 +329,6 @@ docker exec gluetun wget -qO- https://ipinfo.io/json
 ---
 
 ## 4. Troubleshooting
-
-### rclone "key is unknown"
-
-**Symptome** : le conteneur rclone echoue avec `Host key verification failed` ou `key is unknown`.
-
-**Diagnostic** :
-
-```bash
-docker logs rclone --tail 20
-# Verifier que known_hosts existe
-ls -la <PROJECT_DIR>/vps/config/rclone/known_hosts
-```
-
-**Solution** :
-
-```bash
-# Rescanner la cle hote SFTP de la Freebox
-ssh-keyscan -p 2222 -H <FREEBOX_WG_IP> > <PROJECT_DIR>/vps/config/rclone/known_hosts
-
-# Redemarrer rclone
-cd <PROJECT_DIR>/vps && docker compose restart rclone
-```
-
-Causes possibles :
-- Le fichier `known_hosts` n'a pas ete genere (setup.sh non execute ou SFTP pas encore demarre)
-- L'IP WireGuard de la Freebox a change
-- Le conteneur SFTP a ete recree (nouvelle cle hote)
-
----
 
 ### qBittorrent ne demarre pas
 
@@ -465,35 +421,6 @@ docker compose up -d gluetun && sleep 10 && docker compose restart qbittorrent
 
 ---
 
-### Sync ne fonctionne pas
-
-**Symptome** : les fichiers n'arrivent pas sur la Freebox.
-
-**Diagnostic** :
-
-```bash
-# 1. Verifier le tunnel WireGuard
-wg show wg-freebox
-ping -c 3 <FREEBOX_WG_IP>
-
-# 2. Tester le SFTP manuellement
-ssh -p 2222 -i <PROJECT_DIR>/vps/config/rclone/id_rsa mediastack@<FREEBOX_WG_IP>
-
-# 3. Verifier les logs rclone
-docker logs rclone --tail 30
-```
-
-**Solution selon la cause** :
-
-| Cause | Solution |
-|---|---|
-| Tunnel WireGuard down | `wg-quick down wg-freebox && wg-quick up wg-freebox` |
-| SFTP inaccessible | Verifier que le conteneur `sftp` tourne sur la Freebox |
-| Cle SSH invalide | Recopier la cle publique dans `freebox/config/sftp/ssh/authorized_key` |
-| Permissions | `chown -R 1000:1000 <DATA_PATH>/media` sur le VPS |
-
----
-
 ### Service inaccessible via HTTPS
 
 **Symptome** : erreur 502, 503, timeout ou certificat invalide en accedant a un sous-domaine.
@@ -558,29 +485,6 @@ nano <PROJECT_DIR>/vps/fail2ban/jail.local
 # Redemarrer fail2ban
 docker compose restart fail2ban
 ```
-
----
-
-### Fichiers absents sur la Freebox
-
-**Symptome** : les fichiers synchronises ne sont pas visibles sur le NVMe de la Freebox.
-
-**Diagnostic** :
-
-```bash
-# Sur la Freebox, verifier que les fichiers sont presents
-ls -la /mnt/NVMe/media/films/
-ls -la /mnt/NVMe/media/series/
-
-# Verifier les permissions
-stat /mnt/NVMe/media/films/<un_fichier>
-```
-
-**Solution** :
-
-1. **Fichiers absents** : la sync rclone n'a pas fonctionne -- voir [Sync ne fonctionne pas](#sync-ne-fonctionne-pas)
-2. **Permissions incorrectes** : `chown -R 1000:1000 /mnt/NVMe/media`
-3. **Sync incomplete** : verifier les logs rclone, les fichiers `.part` ou `.!qB` sont exclus de la sync
 
 ---
 
@@ -759,97 +663,19 @@ docker restart authelia
 
 ---
 
-## 5. Sync avancee (sync-watch.sh)
-
-Le script `vps/scripts/sync-watch.sh` offre une alternative a la sync rclone en boucle (toutes les 10 secondes). Il utilise `inotify` pour detecter les nouveaux fichiers en temps reel.
-
-### Differences avec le conteneur rclone
-
-| | Conteneur rclone | sync-watch.sh |
-|---|---|---|
-| Methode | Boucle `rclone move` toutes les 10s | Detection inotify + sync fichier par fichier |
-| Latence | Jusqu'a 10s | Quasi instantanee (+ 30s stabilisation) |
-| Execution | Conteneur Docker | Script sur le host |
-| Fallback | - | Sync complete toutes les heures |
-| Retry | Aucun | 3 tentatives avec backoff (10s, 30s, 90s) |
-| Notifications | Non | Webhook Discord/Slack |
-
-### Activer la sync temps reel
-
-```bash
-# Prerequis : inotify-tools (installe par setup.sh)
-apt install inotify-tools
-
-# Lancer en arriere-plan
-cd <PROJECT_DIR>/vps
-nohup bash scripts/sync-watch.sh &
-
-# Ou creer un service systemd
-cat > /etc/systemd/system/sync-watch.service << 'EOF'
-[Unit]
-Description=Media Stack Sync Watch
-After=network.target docker.service
-
-[Service]
-Type=simple
-WorkingDirectory=<PROJECT_DIR>/vps
-ExecStart=/bin/bash scripts/sync-watch.sh
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl daemon-reload
-systemctl enable --now sync-watch
-```
-
-### Configuration inotify
-
-Le script surveille `<DATA_PATH>/media` recursivement pour les evenements `close_write` et `moved_to`. Les fichiers temporaires (`.part`, `.tmp`, `.!qB`, `~`) sont ignores.
-
-Si le nombre de fichiers est important, augmenter la limite inotify :
-
-```bash
-# Voir la limite actuelle
-cat /proc/sys/fs/inotify/max_user_watches
-
-# Augmenter si necessaire
-echo "fs.inotify.max_user_watches=524288" >> /etc/sysctl.d/99-inotify.conf
-sysctl -p /etc/sysctl.d/99-inotify.conf
-```
-
-### Logs et debug
-
-```bash
-# Voir les logs
-tail -f /var/log/rclone-sync.log
-
-# Verifier que le processus tourne
-pgrep -f sync-watch
-
-# Verifier les notifications webhook
-grep "webhook\|FAILED" /var/log/rclone-sync.log
-```
-
----
-
-## 6. Sauvegardes
+## 5. Sauvegardes
 
 ### Ce qu'il faut sauvegarder
 
 | Element | Chemin | Raison |
 |---|---|---|
 | Variables d'environnement VPS | `vps/.env` | Contient toutes les cles et mots de passe |
-| Variables d'environnement Freebox | `freebox/.env` | Config Freebox SFTP |
-| Cle SSH rclone | `vps/config/rclone/id_rsa` | Authentification SFTP |
+| Variables d'environnement Freebox | `freebox/.env` | Config Freebox (Mullvad, qBit) |
 | Config WireGuard | `/etc/wireguard/wg-freebox.conf` | Tunnel VPS-Freebox |
 | Config Sonarr | `vps/config/sonarr/` | Series suivies, profils, historique |
 | Config Radarr | `vps/config/radarr/` | Films suivis, profils, historique |
 | Config Prowlarr | `vps/config/prowlarr/` | Indexeurs configures |
 | Config Seerr | `vps/config/overseerr/` | Utilisateurs, demandes |
-| Config qBittorrent | `vps/config/qbittorrent/` | Torrents actifs, preferences |
 | Config Homepage | `vps/config/homepage/` | Dashboard personnalise |
 | Config Authelia | `vps/config/authelia/` | SSO, base utilisateurs, sessions |
 | Certificats SSL | `/etc/ssl/cloudflare/` | Certificats origin Cloudflare |
@@ -859,7 +685,6 @@ grep "webhook\|FAILED" /var/log/rclone-sync.log
 - `<DATA_PATH>/downloads/` -- fichiers temporaires de telechargement, volumineux et reproductibles
 - `<DATA_PATH>/media/` -- media synces, reproductibles depuis les sources
 - `/var/lib/docker/` -- runtime Docker, recree automatiquement
-- `vps/config/gluetun/` -- cache Gluetun, recree au demarrage
 - `fail2ban_data` volume -- base de bans, ephemere
 
 ### Script de backup recommande
@@ -881,14 +706,10 @@ tar czf "$BACKUP_FILE" \
     -C / \
     "${PROJECT_DIR#/}/vps/.env" \
     "${PROJECT_DIR#/}/freebox/.env" \
-    "${PROJECT_DIR#/}/vps/config/rclone/id_rsa" \
-    "${PROJECT_DIR#/}/vps/config/rclone/id_rsa.pub" \
-    "${PROJECT_DIR#/}/vps/config/rclone/known_hosts" \
     "${PROJECT_DIR#/}/vps/config/sonarr/" \
     "${PROJECT_DIR#/}/vps/config/radarr/" \
     "${PROJECT_DIR#/}/vps/config/prowlarr/" \
     "${PROJECT_DIR#/}/vps/config/overseerr/" \
-    "${PROJECT_DIR#/}/vps/config/qbittorrent/" \
     "${PROJECT_DIR#/}/vps/config/homepage/" \
     "${PROJECT_DIR#/}/vps/config/authelia/" \
     etc/wireguard/wg-freebox.conf \
@@ -922,11 +743,11 @@ cd <PROJECT_DIR>/vps && docker compose up -d
 docker compose ps
 ```
 
-> **Note** : Apres restauration, verifier que le tunnel WireGuard est actif (`wg show wg-freebox`) et que rclone peut se connecter a la Freebox.
+> **Note** : Apres restauration, verifier que le tunnel WireGuard est actif (`wg show wg-freebox`) et que le montage CIFS fonctionne (`df -h /mnt/freebox`).
 
 ---
 
-## 7. Procedures d'urgence
+## 6. Procedures d'urgence
 
 ### VPS compromis
 
@@ -960,8 +781,7 @@ docker logs fail2ban --tail 100
    - Mot de passe Authelia (`AUTHELIA_PASSWORD`) et secrets (`AUTHELIA_JWT_SECRET`, etc.)
    - Cle WireGuard Mullvad
    - Cle WireGuard tunnel Freebox
-   - Cle SSH rclone (regenerer + recopier sur la Freebox)
-   - Cle de chiffrement Homepage
+   - Identifiants SMB Freebox (`/etc/cifs-credentials`)
 5. Regenerer les certificats Cloudflare origin
 6. Verifier que la Freebox n'a pas ete affectee
 
@@ -1003,7 +823,7 @@ deny all;
 
 ### IP publique de la Freebox changee
 
-**Symptome** : le tunnel WireGuard ne se reconnecte plus, la sync rclone echoue.
+**Symptome** : le tunnel WireGuard ne se reconnecte plus, le montage CIFS echoue.
 
 **Diagnostic** :
 

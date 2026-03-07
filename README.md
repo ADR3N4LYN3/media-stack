@@ -1,6 +1,6 @@
 # Media Stack Self-Hosted
 
-Stack media automatisee, securisee et optimisee : telechargement sur Freebox derriere VPN Mullvad, acces fichiers via NFS sur tunnel WireGuard, lecture 4K direct play via le player Freebox.
+Stack media automatisee, securisee et optimisee : telechargement sur Freebox derriere VPN Mullvad, acces fichiers via CIFS/SMB sur tunnel WireGuard, lecture 4K direct play via le player Freebox.
 
 ## Architecture
 
@@ -9,13 +9,13 @@ VPS Hetzner AX22 (Helsinki)                 Freebox Ultra (domicile)
 ─────────────────────────────               ────────────────────────
 nginx        ← reverse proxy HTTPS          Gluetun → VPN Mullvad
                (Cloudflare SSL)             qBittorrent (derriere VPN)
-Authelia      ← SSO (portail auth unique)   NFS Server → port 2049
+Authelia      ← SSO (portail auth unique)   SMB (NVMe) → port 2049
 Seerr        ← demandes utilisateur         Jellyfin (lecture 4K)
 Homepage     ← dashboard monitoring         Player Freebox (lecture 4K)
 Sonarr       ← gestion series              NVMe interne
 Radarr       ← gestion films               /data/
 Prowlarr     ← indexeurs torrent            ├── downloads/
-NFS mount    ← /mnt/freebox ── WireGuard ───┤── media/
+CIFS mount    ← /mnt/freebox ── WireGuard ───┤── media/
 Fail2ban     ← protection brute-force       │   ├── films/
 Watchtower   ← MAJ auto images Docker       │   └── series/
 WireGuard    ← tunnel vers Freebox (host)   WireGuard Server (natif Freebox)
@@ -24,7 +24,7 @@ WireGuard    ← tunnel vers Freebox (host)   WireGuard Server (natif Freebox)
 **Flux :**
 1. Demande via Seerr -> Sonarr/Radarr cherchent via Prowlarr
 2. qBittorrent telecharge directement sur le NVMe Freebox (derriere VPN Mullvad via Gluetun)
-3. Sonarr/Radarr importent via NFS (renommage + hardlinks sur le NVMe Freebox)
+3. Sonarr/Radarr importent via CIFS (renommage + hardlinks sur le NVMe Freebox)
 4. Player Freebox lit directement depuis le NVMe -> 4K direct play
 
 ## Prerequis
@@ -59,7 +59,7 @@ WireGuard    ← tunnel vers Freebox (host)   WireGuard Server (natif Freebox)
    - Keepalive : 25
 4. **Telecharger le fichier .conf** → noter les valeurs pour le `.env` du VPS
 
-### Etape 1 — Freebox (Gluetun + qBittorrent + NFS + SFTP)
+### Etape 1 — Freebox (Gluetun + qBittorrent + Jellyfin)
 
 ```bash
 cd freebox/
@@ -67,10 +67,7 @@ cp .env.example .env
 nano .env    # Remplir les variables (Mullvad, qBittorrent, WireGuard)
 
 bash scripts/setup-freebox.sh
-# -> Lance Gluetun, qBittorrent, SFTP, Jellyfin
-
-bash nfs-setup.sh <VPS_WG_IP>
-# -> Installe et configure le serveur NFS
+# -> Lance Gluetun, qBittorrent, Jellyfin
 ```
 
 ### Etape 2 — VPS
@@ -82,7 +79,7 @@ nano .env    # Remplir : tunnel Freebox, domaine, Authelia secrets
 
 bash scripts/setup.sh
 # -> Installe WireGuard et monte le tunnel vers la Freebox
-# -> Monte le partage NFS Freebox sur /mnt/freebox
+# -> Monte le partage CIFS Freebox sur /mnt/freebox
 # -> Configure Authelia SSO (hash Argon2id, users_database.yml)
 # -> Configure nginx reverse proxy avec auth_request Authelia
 # -> Inclut automatiquement le durcissement systeme (harden.sh)
@@ -184,15 +181,12 @@ media-stack/
 │   │       ├── services.yaml    # Widgets et services du dashboard
 │   │       ├── settings.yaml    # Theme, layout, langue
 │   │       └── widgets.yaml     # Widgets systeme (CPU, RAM, disque)
-│   ├── systemd/
-│   │   └── mnt-freebox.mount    # Unit systemd pour le montage NFS
 │   └── scripts/
-│       ├── setup.sh             # Installation VPS + tunnel WireGuard + NFS + Authelia + nginx
+│       ├── setup.sh             # Installation VPS + tunnel WireGuard + CIFS + Authelia + nginx
 │       ├── harden.sh            # Durcissement systeme
 └── freebox/
-    ├── docker-compose.yml       # SFTP + Gluetun + qBittorrent + Jellyfin
+    ├── docker-compose.yml       # Gluetun + qBittorrent + Jellyfin
     ├── .env.example
-    ├── nfs-setup.sh             # Installation serveur NFS
     ├── config/
     │   └── qbittorrent/
     │       ├── qBittorrent.conf            # Config optimisee
@@ -215,7 +209,7 @@ media-stack/
 | `WG_FREEBOX_ADDRESS` | `vps/.env` | Adresse IP du VPS dans le tunnel (ex: 192.168.27.65/32) |
 | `WG_FREEBOX_PUBLIC_KEY` | `vps/.env` | Cle publique de la Freebox (dans le fichier .conf, section [Peer]) |
 | `WG_FREEBOX_ENDPOINT` | `vps/.env` | IP publique de la Freebox (dans le fichier .conf, Endpoint sans le port) |
-| `FREEBOX_WG_IP` | `vps/.env` | IP Freebox pour nginx proxy, Homepage widget et NFS mount |
+| `FREEBOX_WG_IP` | `vps/.env` | IP Freebox pour nginx proxy, Homepage widget et CIFS mount |
 | `DOMAIN` | `vps/.env` | Domaine pointant vers le VPS (ex: media.exemple.fr) |
 | `HETZNER_VOLUME_PATH` | `vps/.env` | Chemin du volume Hetzner (pour widget disque Homepage) |
 | `AUTHELIA_JWT_SECRET` | `vps/.env` | Secret JWT Authelia (min 32 chars, `openssl rand -hex 32`) |
@@ -229,8 +223,8 @@ media-stack/
 ## Securite
 
 - **VPN obligatoire** : qBittorrent sur la Freebox ne demarre jamais sans VPN actif (healthcheck Gluetun)
-- **Tunnel WireGuard** : communications VPS<->Freebox chiffrees, NFS et qBittorrent accessibles uniquement via le tunnel
-- **NFS securise** : export restreint a l'IP WireGuard du VPS uniquement
+- **Tunnel WireGuard** : communications VPS<->Freebox chiffrees, CIFS et qBittorrent accessibles uniquement via le tunnel
+- **CIFS securise** : partage SMB accessible uniquement via le tunnel WireGuard
 - **Aucun port interne expose** : seuls nginx (80/443) sont accessibles depuis l'exterieur
 - **Cloudflare proxy** : IP reelle du VPS masquee, protection DDoS
 - **Authelia SSO** : authentification unique pour les services admin (2FA TOTP). Seerr utilise son auth interne (plus simple pour les utilisateurs non-techniques)
@@ -254,9 +248,9 @@ docker exec gluetun wget -qO- https://ipinfo.io/json
 wg show wg-freebox
 ping -c 3 FREEBOX_WG_IP
 
-# Verifier le montage NFS
+# Verifier le montage CIFS
 df -h /mnt/freebox
-systemctl status mnt-freebox.mount
+mount | grep freebox
 
 # Logs d'un service specifique
 docker logs -f sonarr

@@ -59,13 +59,13 @@ if ! docker compose version &>/dev/null; then
 fi
 ok "Docker Compose $(docker compose version --short)"
 
-# NFS client (pour monter les médias Freebox)
-if ! command -v mount.nfs4 &>/dev/null; then
-    warn "nfs-common non trouvé. Installation..."
-    apt-get update -qq && apt-get install -y -qq nfs-common
-    ok "nfs-common installé"
+# CIFS client (pour monter le partage SMB Freebox via WireGuard)
+if ! command -v mount.cifs &>/dev/null; then
+    warn "cifs-utils non trouvé. Installation..."
+    apt-get update -qq && apt-get install -y -qq cifs-utils
+    ok "cifs-utils installé"
 else
-    ok "nfs-common disponible"
+    ok "cifs-utils disponible"
 fi
 
 # WireGuard (tunnel vers Freebox)
@@ -89,7 +89,7 @@ if [ -f "$PROJECT_DIR/.env" ]; then
     source <(grep -E '^(PUID|PGID)=' "$PROJECT_DIR/.env")
 fi
 
-# Point de montage NFS Freebox (les données média sont sur la Freebox)
+# Point de montage CIFS Freebox (les données média sont sur la Freebox)
 mkdir -p /mnt/freebox
 
 # Configs des services (permissions correctes dès la création)
@@ -195,32 +195,47 @@ else
     warn "Freebox non joignable via ${FREEBOX_WG_IP} — vérifie que le serveur WireGuard est actif sur la Freebox"
 fi
 
-# ── 6. Montage NFS Freebox (médias via WireGuard) ──
+# ── 6. Montage CIFS Freebox (médias via WireGuard) ──
 
-info "Configuration du montage NFS Freebox..."
+info "Configuration du montage CIFS Freebox..."
 
-NFS_MOUNT_UNIT="/etc/systemd/system/mnt-freebox.mount"
+CIFS_CREDENTIALS="/etc/cifs-credentials"
 
-if [ ! -f "$NFS_MOUNT_UNIT" ]; then
-    sed "s|FREEBOX_WG_IP_PLACEHOLDER|${FREEBOX_WG_IP}|g" \
-        "$PROJECT_DIR/systemd/mnt-freebox.mount" > "$NFS_MOUNT_UNIT"
-    systemctl daemon-reload
-    systemctl enable mnt-freebox.mount
-    ok "Unit systemd mnt-freebox.mount installée"
+if [ ! -f "$CIFS_CREDENTIALS" ]; then
+    echo ""
+    echo "Configuration des identifiants SMB Freebox :"
+    read -rp "  Utilisateur SMB Freebox : " smb_user
+    read -rsp "  Mot de passe SMB Freebox : " smb_pass
+    echo ""
+    cat > "$CIFS_CREDENTIALS" <<EOF
+username=${smb_user}
+password=${smb_pass}
+EOF
+    chmod 600 "$CIFS_CREDENTIALS"
+    ok "Identifiants CIFS enregistrés dans $CIFS_CREDENTIALS"
 else
-    ok "Unit systemd mnt-freebox.mount déjà existante"
+    ok "Identifiants CIFS déjà configurés"
+fi
+
+# Ajouter l'entrée fstab si absente
+if ! grep -q "/mnt/freebox" /etc/fstab; then
+    echo "//192.168.1.254/NVMe /mnt/freebox cifs credentials=${CIFS_CREDENTIALS},uid=${PUID},gid=${PGID},vers=3.0,_netdev,x-systemd.automount,x-systemd.after=wg-quick@wg-freebox.service 0 0" >> /etc/fstab
+    systemctl daemon-reload
+    ok "Entrée fstab CIFS ajoutée"
+else
+    ok "Entrée fstab CIFS déjà présente"
 fi
 
 # Tenter le montage
 if ! mountpoint -q /mnt/freebox; then
-    info "Montage NFS /mnt/freebox..."
-    if systemctl start mnt-freebox.mount 2>/dev/null; then
-        ok "NFS monté sur /mnt/freebox"
+    info "Montage CIFS /mnt/freebox..."
+    if mount /mnt/freebox 2>/dev/null; then
+        ok "CIFS monté sur /mnt/freebox"
     else
-        warn "Montage NFS échoué — vérifie que le NFS server est actif sur la Freebox (bash nfs-setup.sh)"
+        warn "Montage CIFS échoué — vérifie le tunnel WireGuard et les identifiants SMB"
     fi
 else
-    ok "NFS déjà monté sur /mnt/freebox"
+    ok "CIFS déjà monté sur /mnt/freebox"
 fi
 
 # ── 7. Configuration Authelia SSO ──
@@ -379,7 +394,7 @@ printf "  ${GREEN}%-15s${NC} %s\n" "Radarr"      "https://radarr.${DOMAIN}"
 printf "  ${GREEN}%-15s${NC} %s\n" "Prowlarr"    "https://prowlarr.${DOMAIN}"
 printf "  ${GREEN}%-15s${NC} %s\n" "qBittorrent" "https://qbittorrent.${DOMAIN} (via Freebox)"
 printf "  ${GREEN}%-15s${NC} %s\n" "Jackett"     "https://jackett.${DOMAIN}"
-printf "  ${GREEN}%-15s${NC} %s\n" "NFS Freebox" "/mnt/freebox (${FREEBOX_WG_IP}:/data)"
+printf "  ${GREEN}%-15s${NC} %s\n" "CIFS Freebox" "/mnt/freebox (//192.168.1.254/NVMe)"
 echo ""
 echo "  DNS requis : auth, seerr, home, sonarr, radarr, prowlarr, qbittorrent, jackett, logs → A record vers IP VPS"
 echo ""

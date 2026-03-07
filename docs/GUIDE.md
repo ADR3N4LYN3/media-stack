@@ -1,6 +1,6 @@
 # Guide d'installation et d'utilisation - Media Stack
 
-Guide complet pour deployer et utiliser le Media Stack self-hosted : telechargement automatise sur Freebox derriere VPN, acces aux fichiers depuis le VPS via NFS, lecture 4K direct play via le player Freebox.
+Guide complet pour deployer et utiliser le Media Stack self-hosted : telechargement automatise sur Freebox derriere VPN, acces aux fichiers depuis le VPS via CIFS, lecture 4K direct play via le player Freebox.
 
 ---
 
@@ -55,7 +55,7 @@ Avant de commencer, il faut creer ces comptes :
 
 ## 2. Installation Freebox
 
-La Freebox heberge qBittorrent (derriere VPN Gluetun), un serveur NFS et un serveur SFTP (legacy). La lecture se fait directement via le player Freebox integre. On configure la Freebox en premier car le VPS a besoin des informations WireGuard.
+La Freebox heberge qBittorrent (derriere VPN Gluetun) et Jellyfin. Le NVMe est partage via SMB par le routeur Freebox. La lecture se fait directement via le player Freebox integre. On configure la Freebox en premier car le VPS a besoin des informations WireGuard.
 
 ### 2.1 Activer Docker dans Freebox OS
 
@@ -156,8 +156,6 @@ Voici chaque variable avec son explication :
 | `WIREGUARD_ADDRESSES` | Adresse IP WireGuard Mullvad | depuis le compte Mullvad |
 | `QBIT_PASSWORD` | Mot de passe WebUI qBittorrent | choix utilisateur |
 | `FREEBOX_WG_IP` | IP de la machine sur le tunnel WireGuard | ex: `192.168.27.64` |
-| `SFTP_USER` | Nom utilisateur pour la connexion SFTP | `mediastack` |
-
 Exemple de fichier `.env` complet :
 
 ```env
@@ -172,8 +170,6 @@ WIREGUARD_ADDRESSES=10.66.123.45/32
 
 QBIT_PASSWORD=MonMotDePasseQbit
 FREEBOX_WG_IP=192.168.27.64
-
-SFTP_USER=mediastack
 ```
 
 ### 2.5 Lancer le script d'installation
@@ -198,28 +194,19 @@ A la fin, tu verras :
   SFTP  -> port 2222 (via tunnel WireGuard)
 ```
 
-### 2.6 Installer le serveur NFS
-
-```bash
-bash nfs-setup.sh <VPS_WG_IP>
-# L'IP WireGuard du VPS se trouve dans WG_FREEBOX_ADDRESS du .env VPS (sans le /32)
-```
-
-### 2.7 Services lances sur la Freebox
+### 2.6 Services lances sur la Freebox
 
 | Service | Port | Role |
 |---|---|---|
 | **Gluetun** | 8080 (bind WireGuard) | VPN Mullvad WireGuard pour les torrents |
 | **qBittorrent** | via Gluetun | Client torrent (telechargement direct NVMe) |
-| **NFS** | 2049 (bind WireGuard) | Export donnees vers le VPS |
-| **SFTP** | 2222 | Acces fichiers alternatif (legacy) |
 | **Jellyfin** | 8096 | Serveur media (lecture locale) |
 
 ---
 
 ## 3. Installation VPS
 
-Le VPS est le coeur du systeme : il gere les demandes, l'indexation et le reverse proxy. Les telechargements se font sur la Freebox, accessibles via NFS.
+Le VPS est le coeur du systeme : il gere les demandes, l'indexation et le reverse proxy. Les telechargements se font sur la Freebox, accessibles via CIFS.
 
 ### 3.1 Preparer le serveur
 
@@ -289,7 +276,7 @@ Ces valeurs viennent du **fichier .conf telecharge a l'etape 2.2** :
 
 | Variable | Description | Exemple |
 |---|---|---|
-| `FREEBOX_WG_IP` | IP de la Freebox pour le proxy nginx, widget Homepage et montage NFS | `192.168.27.64` |
+| `FREEBOX_WG_IP` | IP de la Freebox pour le proxy nginx, widget Homepage et montage CIFS | `192.168.27.64` |
 
 #### Domaine et nginx
 
@@ -377,12 +364,12 @@ Voici ce que fait chaque etape du script :
 
 | Etape | Action | Detail |
 |---|---|---|
-| 1 | **Verification prerequis** | Installe Docker, Docker Compose, inotify-tools et WireGuard si absents |
+| 1 | **Verification prerequis** | Installe Docker, Docker Compose, cifs-utils et WireGuard si absents |
 | 2 | **Creation repertoires** | Cree `/data/downloads/complete`, `/data/downloads/incomplete`, `/data/media/films`, `/data/media/series` |
 | 3 | **Copie .env** | Copie `.env.example` vers `.env` si le fichier n'existe pas |
 | 4 | **Verification variables** | Verifie qu'aucune variable ne contient encore `CHANGE_ME` |
 | 5 | **Tunnel WireGuard** | Genere `/etc/wireguard/wg-freebox.conf` et active le tunnel vers la Freebox |
-| 6 | **Montage NFS** | Installe nfs-common, cree le unit systemd, monte /mnt/freebox |
+| 6 | **Montage CIFS** | Installe cifs-utils, configure fstab, monte /mnt/freebox |
 | 7 | **Configuration Authelia** | Genere le hash Argon2id du mot de passe, configure users_database.yml |
 | 8 | **Configuration nginx** | Installe nginx, deploie la config reverse proxy avec auth_request Authelia |
 | 9 | **Durcissement systeme** | Propose de lancer `harden.sh` (optionnel mais recommande) |
@@ -505,7 +492,7 @@ Dans la console Hetzner Cloud, configurer le firewall avec ces regles :
 | **Byparr** | 8192 | Bypass Cloudflare pour indexeurs Prowlarr |
 | **Jackett** | 9117 | Indexeur supplementaire (fallback Cloudflare) |
 | **Authelia** | 9091 | SSO -- portail d'authentification unique (2FA TOTP) |
-| **NFS mount** | /mnt/freebox | Acces aux fichiers Freebox via WireGuard |
+| **CIFS mount** | /mnt/freebox | Acces aux fichiers Freebox (SMB via WireGuard) |
 | **Fail2ban** | - | Protection brute-force SSH et nginx |
 | **Watchtower** | - | Mise a jour automatique des images Docker (3h du matin) |
 
@@ -687,12 +674,12 @@ Plusieurs endroits pour suivre l'avancement :
 
 ### 5.3 Verifier les fichiers
 
-Les fichiers sont maintenant telecharges directement sur le NVMe Freebox via qBittorrent. Plus besoin de synchronisation -- Sonarr/Radarr accedent aux fichiers via NFS.
+Les fichiers sont maintenant telecharges directement sur le NVMe Freebox via qBittorrent. Plus besoin de synchronisation -- Sonarr/Radarr accedent aux fichiers via CIFS.
 
 Pour verifier :
 
 ```bash
-# Verifier le montage NFS
+# Verifier le montage CIFS
 df -h /mnt/freebox
 
 # Verifier les fichiers
@@ -735,10 +722,10 @@ docker exec gluetun wget -qO- https://ipinfo.io/json
 
 Le resultat doit montrer une IP Mullvad (pas l'IP de ta Freebox).
 
-### Etape 4 : Verifier le montage NFS
+### Etape 4 : Verifier le montage CIFS
 
 1. Attendre que le telechargement soit termine
-2. Verifier que le montage NFS est actif sur le VPS :
+2. Verifier que le montage CIFS est actif sur le VPS :
 
 ```bash
 df -h /mnt/freebox
@@ -775,10 +762,10 @@ wg show wg-freebox
 ping -c 3 FREEBOX_WG_IP
 ```
 
-### Verification du montage NFS
+### Verification du montage CIFS
 
 ```bash
-# Verifier le montage NFS
+# Verifier le montage CIFS
 df -h /mnt/freebox
 systemctl status mnt-freebox.mount
 ```
@@ -858,7 +845,7 @@ Causes possibles :
 - Le serveur WireGuard n'est pas active sur la Freebox
 - L'IP publique de la Freebox a change (mettre a jour `WG_FREEBOX_ENDPOINT`)
 
-### Le montage NFS ne fonctionne pas
+### Le montage CIFS ne fonctionne pas
 
 ```bash
 # Verifier le status du montage

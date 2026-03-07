@@ -71,30 +71,6 @@ services:
     restart: unless-stopped
 
   # ──────────────────────────────────────────────
-  # SFTP — Réception des fichiers depuis le VPS
-  # Accessible uniquement via le tunnel WireGuard
-  # ──────────────────────────────────────────────
-  sftp:
-    image: lscr.io/linuxserver/openssh-server:latest
-    container_name: sftp
-    environment:
-      - PUID=${PUID}
-      - PGID=${PGID}
-      - TZ=${TZ}
-      - SUDO_ACCESS=false
-      - PASSWORD_ACCESS=false
-      - USER_NAME=${SFTP_USER}
-      - PUBLIC_KEY_FILE=/config/ssh/authorized_key
-    ports:
-      - "2222:2222"
-    volumes:
-      - ./config/sftp:/config
-      - ${MEDIA_PATH}:/data
-    security_opt:
-      - "no-new-privileges:true"
-    restart: unless-stopped
-
-  # ──────────────────────────────────────────────
   # Jellyfin — Serveur média (lecture locale + streaming distant)
   # Accessible en LAN pour le Player Devialet et via tunnel WireGuard
   # ──────────────────────────────────────────────
